@@ -14,7 +14,8 @@ export async function GET(
     const days = Math.min(90, Math.max(5, Number(req.nextUrl.searchParams.get("days") || 90)));
     const rows = await sql`
       SELECT to_char(date, 'YYYY-MM-DD') AS date, open, high, low, close, volume
-      FROM daily_ohlcv WHERE symbol = ${symbol}
+      FROM daily_ohlcv
+      WHERE symbol = ${symbol} AND close IS NOT NULL
       ORDER BY date ASC LIMIT ${days}
     `;
     const meta = await sql`

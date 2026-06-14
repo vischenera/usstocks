@@ -105,6 +105,35 @@ def incremental_step(conn, src, symbols):
     return rate_limited, processed, errors
 
 
+def evaluate_symbol(cfg, symbol, name, sector, mcap, bars):
+    """Apply one preset's filters + metrics to a symbol's bars.
+
+    Pure function (no DB) — mirrors the original apply_filters pipeline exactly,
+    so it can be unit-tested in isolation. Returns a result row dict or None.
+    """
+    if not bars:
+        return None
+    last_close = bars[-1]["close"]
+    avg_vol = sum(b["volume"] for b in bars) / len(bars)
+    # Hard filters (cheap) before the metrics math — same order as the original.
+    if last_close is None or last_close < cfg["min_price"] or last_close > cfg["max_price"]:
+        return None
+    if avg_vol < cfg["min_volume"]:
+        return None
+    if mcap < cfg["min_mcap"] or mcap > cfg["max_mcap"]:
+        return None
+    m = calculate_metrics(bars, cfg["period_days"], cfg["stop_percentage"],
+                          cfg["period_days"] == 1)
+    if m is None:
+        return None
+    if m["momentum_score"] < cfg.get("min_momentum", -999):
+        return None
+    if cfg.get("max_volatility", 999) < 999 and m["volatility"] > cfg["max_volatility"]:
+        return None
+    return {"symbol": symbol, "company_name": name, "sector": sector,
+            "market_cap": mcap, **m}
+
+
 def compute_results(conn, run_id, symbols):
     """Recompute metrics for every preset from DB data; store scan_results."""
     total_valid = 0
@@ -115,39 +144,16 @@ def compute_results(conn, run_id, symbols):
         for sym, name, sector, mcap in cur.fetchall():
             meta[sym] = (name, sector, mcap or 0)
 
-    # Cache OHLCV per symbol to avoid re-reading for each preset.
-    bars_cache = {}
+    # Bulk-load all OHLCV in a single query (far fewer round-trips than per-symbol).
+    all_bars = db.load_all_ohlcv(conn)
 
     for preset_key, cfg in config.PRESETS.items():
-        is_intraday = cfg["period_days"] == 1
         rows = []
         for symbol in symbols:
             name, sector, mcap = meta.get(symbol, (symbol, "N/A", 0))
-            price_ok = mcap_ok = True
-            bars = bars_cache.get(symbol)
-            if bars is None:
-                bars = db.load_ohlcv(conn, symbol)
-                bars_cache[symbol] = bars
-            if not bars:
-                continue
-            last_close = bars[-1]["close"]
-            avg_vol = sum(b["volume"] for b in bars) / len(bars)
-            # Hard filters (cheap) before the metrics math.
-            if last_close is None or last_close < cfg["min_price"] or last_close > cfg["max_price"]:
-                continue
-            if avg_vol < cfg["min_volume"]:
-                continue
-            if mcap < cfg["min_mcap"] or mcap > cfg["max_mcap"]:
-                continue
-            m = calculate_metrics(bars, cfg["period_days"], cfg["stop_percentage"], is_intraday)
-            if m is None:
-                continue
-            if m["momentum_score"] < cfg.get("min_momentum", -999):
-                continue
-            if cfg.get("max_volatility", 999) < 999 and m["volatility"] > cfg["max_volatility"]:
-                continue
-            rows.append({"symbol": symbol, "company_name": name, "sector": sector,
-                         "market_cap": mcap, **m})
+            row = evaluate_symbol(cfg, symbol, name, sector, mcap, all_bars.get(symbol))
+            if row is not None:
+                rows.append(row)
         db.insert_results(conn, run_id, preset_key, rows)
         total_valid += len(rows)
         print(f"  preset {preset_key}: {len(rows)} matches")

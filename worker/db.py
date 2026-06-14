@@ -133,6 +133,22 @@ def load_ohlcv(conn, symbol):
         return cur.fetchall()
 
 
+def load_all_ohlcv(conn):
+    """Return {symbol: [ascending bar dicts]} for the whole table in one query."""
+    out = {}
+    with conn.cursor(name="ohlcv_stream") as cur:  # server-side cursor for memory
+        cur.itersize = 50000
+        cur.execute(
+            "SELECT symbol, date, open, high, low, close, volume "
+            "FROM daily_ohlcv ORDER BY symbol, date ASC"
+        )
+        for symbol, d, o, h, l, c, v in cur:
+            out.setdefault(symbol, []).append(
+                {"date": d, "open": o, "high": h, "low": l, "close": c, "volume": v}
+            )
+    return out
+
+
 def latest_ohlcv_date(conn, symbol):
     with conn.cursor() as cur:
         cur.execute("SELECT max(date) FROM daily_ohlcv WHERE symbol = %s", (symbol,))
