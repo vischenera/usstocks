@@ -21,7 +21,9 @@ export async function GET(
     const meta = await sql`
       SELECT company_name, sector, market_cap FROM tickers WHERE symbol = ${symbol}
     `;
-    return NextResponse.json({ symbol, meta: meta[0] ?? null, bars: rows });
+    // Coerce BIGINT volume (returned as string) to number for the chart.
+    const bars = rows.map((r: any) => ({ ...r, volume: Number(r.volume) }));
+    return NextResponse.json({ symbol, meta: meta[0] ?? null, bars });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

@@ -41,10 +41,19 @@ export async function GET(req: NextRequest) {
           FROM scan_results
           WHERE run_id = ${runId} AND preset = ${preset}`;
 
-    // Sort by the chosen numeric column (desc) and cap to limit.
-    rows.sort((a: any, b: any) => (Number(b[sortKey]) || -Infinity) - (Number(a[sortKey]) || -Infinity));
+    // Neon returns BIGINT columns as strings — coerce to numbers so the
+    // Row type is honest and sorting/formatting is safe.
+    const coerced = rows.map((r: any) => ({
+      ...r,
+      market_cap: Number(r.market_cap),
+      volume: Number(r.volume),
+      avg_volume: Number(r.avg_volume),
+    }));
 
-    return NextResponse.json({ runId, rows: rows.slice(0, limit) });
+    // Sort by the chosen numeric column (desc) and cap to limit.
+    coerced.sort((a: any, b: any) => (Number(b[sortKey]) || -Infinity) - (Number(a[sortKey]) || -Infinity));
+
+    return NextResponse.json({ runId, rows: coerced.slice(0, limit) });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
