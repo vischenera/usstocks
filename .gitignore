@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+*.pkl
+stock_data_cache/
+.env
