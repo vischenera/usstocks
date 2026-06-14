@@ -1,127 +1,70 @@
-# US Stock Market Scanner - Top 100 Gainers
+# US Stock Momentum Scanner
 
-A Python program that scans US stocks and displays the top 100 gainers with 15% trailing stop-loss indicators.
+A self-driving US-equity momentum scanner with trailing-stop analysis.
 
-## Features
+A scheduled worker pulls daily price data for the whole US market into a
+Postgres database, scores every stock (momentum, trailing stop, volatility),
+and a web dashboard reads the pre-computed results. It runs at **$0/month** and
+needs **no manual operation** — the backfill and daily updates run, retry, and
+resume on their own.
 
-- ✅ Scans major US stocks (S&P 500, NASDAQ, DOW components)
-- ✅ Identifies top 100 gainers based on 30-day performance
-- ✅ Calculates 15% trailing stop-loss levels
-- ✅ Shows distance to stop-loss for each stock
-- ✅ Indicates if stop-loss has been triggered
-- ✅ Exports results to CSV file
-- ✅ Uses free Yahoo Finance API (via yfinance)
-- ✅ Multi-threaded for faster scanning
+> See **[ARCHITECTURE.md](ARCHITECTURE.md)** for the full design.
 
-## Installation
+```
+GitHub Actions (worker)  →  Neon (Postgres)  →  Vercel (dashboard + read API)
+```
 
-1. Install Python 3.8 or higher
+## Layout
 
-2. Install required packages:
+| Path | What |
+|------|------|
+| `worker/` | Python batch job: fetch → score → store (runs in GitHub Actions or locally) |
+| `web/` | Next.js dashboard + read API routes (deploys to Vercel) |
+| `db/schema.sql` | Canonical Postgres schema (also auto-applied by the worker) |
+| `.github/workflows/` | `scan.yml` (the cron) + `keepalive.yml` (keeps the schedule alive) |
+
+## Setup
+
+### 1. Database (Neon — free)
+1. Create a free project at [neon.tech](https://neon.tech).
+2. Copy the connection string (`postgres://…`). The schema is created
+   automatically on the first worker run.
+
+### 2. Worker (GitHub Actions)
+1. Add the connection string as a repo secret named **`DATABASE_URL`**
+   (Settings → Secrets and variables → Actions).
+2. Make the repo **public** for the initial backfill (unlimited free minutes),
+   then trigger **Actions → scan → Run workflow**. Watch the dashboard's status
+   panel show `Backfilling… %` until it reaches 100%.
+3. Once backfill is done you can flip the repo **private** — the daily
+   incremental stays well under the free 2,000 min/month cap.
+
+The `scan` workflow then runs automatically every day at 22:00 UTC (after the
+US close). It resumes on its own if ever interrupted or rate-limited.
+
+### 3. Dashboard (Vercel — free)
+1. Import the repo at [vercel.com](https://vercel.com), set **Root Directory =
+   `web`**.
+2. Add an env var **`DATABASE_URL`** (same Neon string).
+3. Deploy. The dashboard reads pre-computed results — it never calls Yahoo.
+
+## Run the worker locally
+
 ```bash
+cd worker
 pip install -r requirements.txt
+DATABASE_URL='postgres://…' python run.py
 ```
 
-Or install manually:
-```bash
-pip install yfinance pandas numpy
-```
+Each invocation runs one step (a backfill chunk or a daily incremental) and
+exits; the schedule re-invokes it and the state machine resumes.
 
-## Usage
+## Changing the data provider
 
-Run the scanner:
-```bash
-python stock_scanner.py
-```
-
-The program will:
-1. Scan ~150 major US stocks
-2. Calculate trailing stop-loss levels
-3. Display top 100 gainers
-4. Save results to CSV file with timestamp
-
-## Output
-
-The program displays:
-- **Rank**: Position in top gainers list
-- **Ticker**: Stock symbol
-- **Company**: Company name
-- **Sector**: Industry sector
-- **Gain %**: Percentage gain over the period
-- **Current**: Current stock price
-- **Stop**: Trailing stop-loss level (15% below highest high)
-- **Distance**: Percentage distance from current price to stop
-- **Status**: ✅ ACTIVE or ❌ STOPPED (if stop triggered)
-
-## Customization
-
-### Change the scan period
-Edit the `period` parameter in `fetch_stock_data()`:
-```python
-hist = stock.history(period='60d')  # Change from 30d to 60d
-```
-
-### Change trailing stop percentage
-Edit the default in `calculate_trailing_stop()`:
-```python
-def calculate_trailing_stop(stock_data, stop_percentage=0.10):  # 10% instead of 15%
-```
-
-### Add more stocks
-Add tickers to the `major_stocks` list in `get_us_stock_universe()`:
-```python
-major_stocks = [
-    'AAPL', 'MSFT', 'YOUR_TICKER_HERE',
-    # ... more tickers
-]
-```
-
-### Change number of top stocks displayed
-Modify the `top_n` parameter when calling the script:
-```python
-display_top_gainers(stock_data, top_n=50)  # Show top 50 instead of 100
-```
-
-## How Trailing Stop Loss Works
-
-The 15% trailing stop-loss is calculated as follows:
-
-1. **Find the highest high**: Identify the highest price during the scan period
-2. **Calculate stop level**: Stop = Highest High × (1 - 0.15)
-3. **Monitor current price**: If current price falls below stop level, position is "STOPPED"
-
-### Example:
-- Highest High: $100
-- Trailing Stop: $100 × 0.85 = $85
-- Current Price: $90 → Status: ✅ ACTIVE (above stop)
-- Current Price: $80 → Status: ❌ STOPPED (below stop)
-
-## Performance
-
-- Scans ~150 stocks in approximately 10-30 seconds
-- Uses multi-threading for concurrent API requests
-- Rate-limited to avoid API restrictions
-
-## Limitations
-
-- Free Yahoo Finance API has rate limits
-- Limited to stocks with available data on Yahoo Finance
-- 30-day historical data by default
-- Sample includes ~150 major stocks (can be expanded)
-
-## Future Enhancements
-
-- Add real-time streaming data
-- Include pre-market and after-hours data
-- Add technical indicators (RSI, MACD, etc.)
-- Implement alerts when stops are triggered
-- Add visualization with charts
-- Expand to full US market (all NASDAQ/NYSE stocks)
+yfinance is used today. To switch to a paid API later (Alpaca / Finnhub /
+Polygon), implement `fetch_history` and `fetch_info` in a new class in
+`worker/datasource.py` and return it from `get_source()`. Nothing else changes.
 
 ## Disclaimer
 
-This tool is for informational purposes only. Not financial advice. Always do your own research before making investment decisions.
-
-## License
-
-MIT License - Free to use and modify
+For informational purposes only. Not financial advice.
