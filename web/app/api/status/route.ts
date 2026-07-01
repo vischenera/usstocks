@@ -21,10 +21,13 @@ export async function GET() {
     const total = Number(totalRow[0]?.n ?? 0);
     const pct = total > 0 ? Math.min(100, Math.round((cursor / total) * 100)) : 0;
 
-    return NextResponse.json({
-      run: runs[0] ?? null,
-      backfill: { phase, cursor, total, pct, done: phase === "incremental" },
-    });
+    return NextResponse.json(
+      {
+        run: runs[0] ?? null,
+        backfill: { phase, cursor, total, pct, done: phase === "incremental" },
+      },
+      { headers: { "Cache-Control": "no-store, max-age=0" } },
+    );
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
