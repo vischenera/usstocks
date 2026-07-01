@@ -33,4 +33,4 @@ jobs:
         working-directory: worker
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: python run.py
+        run: python -u run.py
