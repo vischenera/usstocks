@@ -11,6 +11,11 @@ import urllib.request
 _NASDAQ_URL = "https://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt"
 _OTHER_URL = "https://ftp.nasdaqtrader.com/SymbolDirectory/otherlisted.txt"
 
+# nasdaqtrader.com occasionally TCP-blocks GitHub Actions' IP ranges outright
+# (connection never establishes, retries don't help). Fall back to a plain-text
+# mirror hosted on GitHub's own CDN, which Actions runners can always reach.
+_FALLBACK_URL = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/all/all_tickers.txt"
+
 _RETRIES = 4
 _BACKOFF_SECONDS = 5
 
@@ -27,6 +32,11 @@ def _download(url):
             if attempt < _RETRIES - 1:
                 time.sleep(_BACKOFF_SECONDS * (attempt + 1))
     raise last_err
+
+
+def _download_fallback_tickers():
+    text = _download(_FALLBACK_URL)
+    return [s.strip() for s in text.strip().split("\n") if s.strip()]
 
 
 def _parse(text, symbol_col=0, drop_chars=(".",)):
@@ -48,8 +58,14 @@ def _parse(text, symbol_col=0, drop_chars=(".",)):
 
 def get_all_us_tickers():
     """Return a sorted, de-duplicated list of US tickers."""
-    nasdaq = _parse(_download(_NASDAQ_URL), symbol_col=0, drop_chars=("."))
-    other = _parse(_download(_OTHER_URL), symbol_col=0,
-                   drop_chars=(".", "$", "^", "/"))
-    other = [s for s in other if "PR" not in s]
-    return sorted(set(nasdaq) | set(other))
+    try:
+        nasdaq = _parse(_download(_NASDAQ_URL), symbol_col=0, drop_chars=("."))
+        other = _parse(_download(_OTHER_URL), symbol_col=0,
+                       drop_chars=(".", "$", "^", "/"))
+        other = [s for s in other if "PR" not in s]
+        return sorted(set(nasdaq) | set(other))
+    except (urllib.error.URLError, TimeoutError):
+        print("nasdaqtrader.com unreachable, falling back to GitHub mirror...")
+        tickers = _download_fallback_tickers()
+        return sorted(s for s in set(tickers)
+                       if not any(ch in s for ch in (".", "$", "^", "/")))
