@@ -15,13 +15,6 @@ from config import (
     BACKOFF_BASE, MIN_REQUEST_INTERVAL, RATE_LIMIT_MARKERS, REQUEST_RETRIES,
 )
 
-_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-    )
-}
-
 
 class RateLimited(Exception):
     """Raised when the upstream signals throttling / auth wall."""
@@ -90,7 +83,7 @@ class YFinanceSource:
         `days` is calendar days; yfinance period string e.g. '90d'.
         """
         def _go():
-            hist = yf.Ticker(symbol).history(period=f"{days}d", headers=_HEADERS)
+            hist = yf.Ticker(symbol).history(period=f"{days}d")
             if hist is None or hist.empty:
                 if not self._logged_empty_sample:
                     self._logged_empty_sample = True
