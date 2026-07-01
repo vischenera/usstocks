@@ -54,8 +54,9 @@ class YFinanceSource:
 
     def __init__(self):
         self._limiter = _GlobalLimiter(MIN_REQUEST_INTERVAL)
+        self._logged_empty_sample = False
 
-    def _call(self, fn):
+    def _call(self, fn, label=""):
         """Run `fn` with global spacing, retries and exponential backoff.
 
         Re-raises RateLimited if throttling persists past all retries so the
@@ -74,7 +75,10 @@ class YFinanceSource:
                         time.sleep(wait)
                         continue
                     raise RateLimited(str(exc)) from exc
-                # Non-throttle error: don't retry, treat as "no data".
+                # Non-throttle error: don't retry, treat as "no data", but log
+                # it so silent systemic failures (e.g. every symbol failing
+                # the same way) are visible instead of looking like empty data.
+                print(f"fetch error [{label}]: {type(exc).__name__}: {exc}")
                 return None
         if last_exc and is_rate_limit_error(last_exc):
             raise RateLimited(str(last_exc))
@@ -88,6 +92,10 @@ class YFinanceSource:
         def _go():
             hist = yf.Ticker(symbol).history(period=f"{days}d", headers=_HEADERS)
             if hist is None or hist.empty:
+                if not self._logged_empty_sample:
+                    self._logged_empty_sample = True
+                    print(f"Empty history sample [{symbol}]: "
+                          f"{'None' if hist is None else repr(hist)}")
                 return []
             bars = []
             for ts, row in hist.iterrows():
@@ -99,7 +107,7 @@ class YFinanceSource:
                 ))
             return bars
 
-        result = self._call(_go)
+        result = self._call(_go, label=f"history:{symbol}")
         return result or []
 
     def fetch_info(self, symbol):
@@ -112,7 +120,7 @@ class YFinanceSource:
             mcap = info.get("marketCap") or 0
             return (name, sector, int(mcap) if mcap else 0)
 
-        result = self._call(_go)
+        result = self._call(_go, label=f"info:{symbol}")
         return result or (symbol, "N/A", 0)
 
 
