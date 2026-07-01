@@ -20,7 +20,7 @@ from universe import get_all_us_tickers
 
 PHASE_KEY = "phase"
 CURSOR_KEY = "backfill_cursor"
-PROGRESS_SAVE_EVERY = 50
+PROGRESS_SAVE_EVERY = 10
 
 
 def ensure_universe(conn):
@@ -72,6 +72,8 @@ def backfill_step(conn, src, symbols):
         # Advance cursor as we go so resume is granular.
         if (i + 1) % PROGRESS_SAVE_EVERY == 0:
             db.set_state(conn, CURSOR_KEY, cursor + i + 1)
+            print(f"Progress: {cursor + i + 1}/{len(symbols)} "
+                  f"({processed} ok, {errors} errors)")
 
     # Persist final cursor for this run.
     new_cursor = cursor + (processed + errors)
