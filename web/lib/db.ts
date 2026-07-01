@@ -8,7 +8,10 @@ export function getSql(): NeonQueryFunction<false, false> {
   if (!_sql) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
-    _sql = neon(url);
+    // The driver issues queries via fetch() under the hood, which Next.js
+    // patches and caches by default — without this, dashboard reads can
+    // silently return a stale cached response despite dynamic route config.
+    _sql = neon(url, { fetchOptions: { cache: "no-store" } });
   }
   return _sql;
 }
