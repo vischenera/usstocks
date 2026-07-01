@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 // Whitelist sortable columns (all numeric) — used for JS sort, never interpolated into SQL.
 const SORTABLE = new Set([

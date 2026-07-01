@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 // Latest run status + backfill progress for the dashboard "Data Status" panel.
 export async function GET() {
