@@ -14,10 +14,14 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then(setStatus)
-      .catch(() => {});
+    const load = () =>
+      fetch("/api/status")
+        .then((r) => (r.ok ? r.json() : null))
+        .then(setStatus)
+        .catch(() => {});
+    load();
+    const id = setInterval(load, 15000);
+    return () => clearInterval(id);
   }, []);
 
   useEffect(() => {
