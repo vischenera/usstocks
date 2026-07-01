@@ -14,7 +14,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetch("/api/status").then((r) => r.json()).then(setStatus).catch(() => {});
+    fetch("/api/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setStatus)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
