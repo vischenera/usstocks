@@ -24,7 +24,7 @@ function ago(iso: string | null): string {
 }
 
 export default function StatusPanel({ status }: { status: Status | null }) {
-  if (!status) {
+  if (!status || !status.backfill) {
     return <div className="rounded-lg border border-slate-800 p-4 text-slate-400">Loading status…</div>;
   }
 
