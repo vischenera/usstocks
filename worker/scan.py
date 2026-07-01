@@ -53,14 +53,15 @@ def backfill_step(conn, src, symbols):
     chunk = symbols[cursor:cursor + config.BACKFILL_CHUNK]
     print(f"Backfill: cursor={cursor}/{len(symbols)}, chunk={len(chunk)}")
 
-    processed = errors = 0
+    processed = errors = valid = 0
     rate_limited = False
 
     for i, symbol in enumerate(chunk):
         try:
             bars = src.fetch_history(symbol, config.WINDOW_DAYS)
             info = src.fetch_info(symbol) if bars else None
-            _store_symbol(conn, symbol, bars, info)
+            if _store_symbol(conn, symbol, bars, info):
+                valid += 1
             processed += 1
         except RateLimited as exc:
             print(f"Rate limited at {symbol}: {exc}. Stopping; will resume.")
@@ -73,18 +74,27 @@ def backfill_step(conn, src, symbols):
         if (i + 1) % PROGRESS_SAVE_EVERY == 0:
             db.set_state(conn, CURSOR_KEY, cursor + i + 1)
             print(f"Progress: {cursor + i + 1}/{len(symbols)} "
-                  f"({processed} ok, {errors} errors)")
+                  f"({valid} valid, {processed} ok, {errors} errors)")
 
     # Persist final cursor for this run.
     new_cursor = cursor + (processed + errors)
-    db.set_state(conn, CURSOR_KEY, new_cursor)
+    reached_end = new_cursor >= len(symbols) and not rate_limited
 
-    done = new_cursor >= len(symbols) and not rate_limited
-    if done:
+    # A full pass that yielded zero real data points to a systemic fetch
+    # problem (e.g. upstream blocking this IP range), not per-symbol gaps.
+    # Don't mark the backfill complete on that basis — retry the same range.
+    if reached_end and valid == 0 and processed > 0:
+        print(f"WARNING: 0/{processed} symbols returned data this run — "
+              "not marking backfill complete, will retry next run.")
+        db.set_state(conn, CURSOR_KEY, cursor)
+        return rate_limited, processed, errors, False
+
+    db.set_state(conn, CURSOR_KEY, new_cursor)
+    if reached_end:
         db.set_state(conn, PHASE_KEY, "incremental")
         db.set_state(conn, CURSOR_KEY, 0)
         print("Backfill complete → switching to incremental mode.")
-    return rate_limited, processed, errors, done
+    return rate_limited, processed, errors, reached_end
 
 
 def incremental_step(conn, src, symbols):
