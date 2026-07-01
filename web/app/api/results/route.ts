@@ -8,6 +8,8 @@ const SORTABLE = new Set([
   "period_gain_pct", "momentum_score", "volatility", "market_cap", "current_price",
 ]);
 
+const NO_STORE = { headers: { "Cache-Control": "no-store, max-age=0" } };
+
 export async function GET(req: NextRequest) {
   try {
     const sql = getSql();
@@ -22,7 +24,7 @@ export async function GET(req: NextRequest) {
       SELECT max(run_id) AS run_id FROM scan_results WHERE preset = ${preset}
     `;
     const runId = latest[0]?.run_id;
-    if (!runId) return NextResponse.json({ runId: null, rows: [] });
+    if (!runId) return NextResponse.json({ runId: null, rows: [] }, NO_STORE);
 
     // Parameterized fetch (two typed branches for the optional active filter).
     const rows = onlyActive
@@ -53,7 +55,7 @@ export async function GET(req: NextRequest) {
     // Sort by the chosen numeric column (desc) and cap to limit.
     coerced.sort((a: any, b: any) => (Number(b[sortKey]) || -Infinity) - (Number(a[sortKey]) || -Infinity));
 
-    return NextResponse.json({ runId, rows: coerced.slice(0, limit) });
+    return NextResponse.json({ runId, rows: coerced.slice(0, limit) }, NO_STORE);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
