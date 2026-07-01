@@ -4,15 +4,29 @@ Mirrors the original scanner: NASDAQ-listed + other-exchange (NYSE/AMEX) files,
 filtering out test issues, warrants, preferreds and symbols with punctuation.
 """
 
+import time
+import urllib.error
 import urllib.request
 
 _NASDAQ_URL = "https://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt"
 _OTHER_URL = "https://ftp.nasdaqtrader.com/SymbolDirectory/otherlisted.txt"
 
+_RETRIES = 4
+_BACKOFF_SECONDS = 5
+
 
 def _download(url):
-    with urllib.request.urlopen(url, timeout=60) as resp:
-        return resp.read().decode("utf-8")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    last_err = None
+    for attempt in range(_RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                return resp.read().decode("utf-8")
+        except (urllib.error.URLError, TimeoutError) as e:
+            last_err = e
+            if attempt < _RETRIES - 1:
+                time.sleep(_BACKOFF_SECONDS * (attempt + 1))
+    raise last_err
 
 
 def _parse(text, symbol_col=0, drop_chars=(".",)):
