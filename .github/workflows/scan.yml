@@ -9,7 +9,7 @@ on:
     # rate-limit pause resumes quickly instead of waiting for the next day.
     # TODO: once the backfill finishes and the repo goes private, delete this
     # line and keep only the 22:00 UTC daily cron below.
-    - cron: "*/15 * * * *"
+    #- cron: "*/15 * * * *"
     # 22:00 UTC ≈ shortly after the US market close. Runs every day.
     - cron: "0 22 * * *"
   workflow_dispatch: {}   # manual "Run workflow" button (use during initial backfill)
