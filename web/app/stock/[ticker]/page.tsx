@@ -8,8 +8,19 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
   const symbol = params.ticker.toUpperCase();
   const [bars, setBars] = useState<Bar[]>([]);
   const [meta, setMeta] = useState<any>(null);
+  // The input is free text while editing; the chart's stopPct only updates
+  // (with clamping) when editing finishes — clamping on every keystroke
+  // rewrote the field mid-edit and recomputed the chart per digit.
   const [stopPct, setStopPct] = useState(10);
+  const [stopInput, setStopInput] = useState("10");
   const [loading, setLoading] = useState(true);
+
+  const commitStop = () => {
+    const n = Number(stopInput);
+    const clamped = Number.isFinite(n) && n > 0 ? Math.min(90, Math.max(0.1, n)) : stopPct;
+    setStopPct(clamped);
+    setStopInput(String(clamped));
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -32,8 +43,10 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
         </div>
         <label className="text-sm">
           <span className="mb-1 block text-slate-400">Trailing stop %</span>
-          <input type="number" min={0.1} max={90} step={0.1} value={stopPct}
-            onChange={(e) => setStopPct(Math.min(90, Math.max(0.1, Number(e.target.value) || 0.1)))}
+          <input type="number" min={0.1} max={90} step={0.1} value={stopInput}
+            onChange={(e) => setStopInput(e.target.value)}
+            onBlur={commitStop}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
             className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-1.5" />
         </label>
       </div>
