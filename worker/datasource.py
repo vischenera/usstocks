@@ -73,9 +73,9 @@ class YFinanceSource:
                 # the same way) are visible instead of looking like empty data.
                 print(f"fetch error [{label}]: {type(exc).__name__}: {exc}")
                 return None
-        if last_exc and is_rate_limit_error(last_exc):
-            raise RateLimited(str(last_exc))
-        return None
+        # Unreachable: every branch above returns, continues, or raises before
+        # the loop can exhaust naturally. Kept only as a defensive fallback.
+        raise RuntimeError("unreachable: retry loop exited without returning")
 
     def fetch_history(self, symbol, days):
         """Return list of (date, open, high, low, close, volume) or [].
