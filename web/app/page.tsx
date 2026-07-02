@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import StatusPanel from "@/components/StatusPanel";
 import ScannerTable, { Row } from "@/components/ScannerTable";
-import { PRESETS, SORT_OPTIONS } from "@/lib/presets";
+import { PRESETS, SORT_OPTIONS, PRESET_DEFS } from "@/lib/presets";
 
 export default function Dashboard() {
   const [status, setStatus] = useState<any>(null);
@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [sort, setSort] = useState(SORT_OPTIONS[0].key);
   const [onlyActive, setOnlyActive] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [days, setDays] = useState(PRESET_DEFS[PRESETS[0].key]?.periodDays ?? 30);
 
   useEffect(() => {
     const load = () =>
@@ -26,13 +27,15 @@ export default function Dashboard() {
 
   useEffect(() => {
     setLoading(true);
-    const qs = new URLSearchParams({ preset, sort, limit: "300", onlyActive: onlyActive ? "1" : "0" });
+    const qs = new URLSearchParams({
+      preset, sort, limit: "300", onlyActive: onlyActive ? "1" : "0", days: String(days),
+    });
     fetch(`/api/results?${qs}`)
       .then((r) => r.json())
       .then((d) => setRows(d.rows || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [preset, sort, onlyActive]);
+  }, [preset, sort, onlyActive, days]);
 
   return (
     <div className="space-y-5">
@@ -41,10 +44,20 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-end gap-4">
         <label className="text-sm">
           <span className="mb-1 block text-slate-400">Preset</span>
-          <select value={preset} onChange={(e) => setPreset(e.target.value)}
+          <select value={preset} onChange={(e) => {
+              const key = e.target.value;
+              setPreset(key);
+              setDays(PRESET_DEFS[key]?.periodDays ?? 30);
+            }}
             className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5">
             {PRESETS.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
           </select>
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-slate-400">Period (days)</span>
+          <input type="number" min={1} max={90} value={days}
+            onChange={(e) => setDays(Math.min(90, Math.max(1, Number(e.target.value) || 1)))}
+            className="w-20 rounded border border-slate-700 bg-slate-900 px-3 py-1.5" />
         </label>
         <label className="text-sm">
           <span className="mb-1 block text-slate-400">Sort by</span>

@@ -32,10 +32,9 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
         </div>
         <label className="text-sm">
           <span className="mb-1 block text-slate-400">Trailing stop %</span>
-          <select value={stopPct} onChange={(e) => setStopPct(Number(e.target.value))}
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5">
-            {[5, 8, 10, 12, 15, 20].map((v) => <option key={v} value={v}>{v}%</option>)}
-          </select>
+          <input type="number" min={0.1} max={90} step={0.1} value={stopPct}
+            onChange={(e) => setStopPct(Math.min(90, Math.max(0.1, Number(e.target.value) || 0.1)))}
+            className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-1.5" />
         </label>
       </div>
 

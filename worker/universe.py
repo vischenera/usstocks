@@ -68,4 +68,5 @@ def get_all_us_tickers():
         print("nasdaqtrader.com unreachable, falling back to GitHub mirror...")
         tickers = _download_fallback_tickers()
         return sorted(s for s in set(tickers)
-                       if not any(ch in s for ch in (".", "$", "^", "/")))
+                       if not any(ch in s for ch in (".", "$", "^", "/"))
+                       and "PR" not in s)

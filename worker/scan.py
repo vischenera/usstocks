@@ -83,9 +83,10 @@ def backfill_step(conn, src, symbols):
     # A full pass that yielded zero real data points to a systemic fetch
     # problem (e.g. upstream blocking this IP range), not per-symbol gaps.
     # Don't mark the backfill complete on that basis — retry the same range.
-    if reached_end and valid == 0 and processed > 0:
-        print(f"WARNING: 0/{processed} symbols returned data this run — "
-              "not marking backfill complete, will retry next run.")
+    if reached_end and valid == 0 and len(chunk) > 0:
+        print(f"WARNING: 0/{len(chunk)} symbols returned data this run "
+              f"({processed} ok, {errors} errors) — not marking backfill "
+              "complete, will retry next run.")
         db.set_state(conn, CURSOR_KEY, cursor)
         return rate_limited, processed, errors, False
 
