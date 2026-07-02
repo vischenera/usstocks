@@ -25,20 +25,19 @@ export default function CandleChart({ bars, stopPct = 10 }: { bars: Bar[]; stopP
     });
     candles.setData(bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })));
 
-    // Auto-flipping trailing stop overlay. Split into LONG/SHORT colored lines.
+    // Auto-flipping trailing stop overlay: ONE continuous line whose color
+    // switches at each flip via lightweight-charts' per-point `color`
+    // (supported since v4.1). Two separate LONG/SHORT series proved fragile:
+    // omitted dates draw straight connector lines across the gap, and dual
+    // series can visually overlap. A single colored series can do neither.
     const { points, flips } = autoFlippingTrail(bars, stopPct);
-    const longLine = chart.addLineSeries({ color: "#22c55e", lineWidth: 2 });
-    const shortLine = chart.addLineSeries({ color: "#f97316", lineWidth: 2 });
-    // lightweight-charts needs an explicit whitespace point ({time} with no
-    // `value`) to render a real gap — omitting a date entirely just draws a
-    // straight connecting line across it, and NaN isn't recognized as a gap
-    // either. Every date must be present in both series: a real value for
-    // the active direction, whitespace for the inactive one.
-    longLine.setData(
-      points.map((p) => (p.direction === "LONG" ? { time: p.date, value: p.trail } : { time: p.date })) as any
-    );
-    shortLine.setData(
-      points.map((p) => (p.direction === "SHORT" ? { time: p.date, value: p.trail } : { time: p.date })) as any
+    const trailLine = chart.addLineSeries({ lineWidth: 2, lastValueVisible: true });
+    trailLine.setData(
+      points.map((p) => ({
+        time: p.date,
+        value: p.trail,
+        color: p.direction === "LONG" ? "#22c55e" : "#f97316",
+      })) as any
     );
 
     if (flips.length) {
