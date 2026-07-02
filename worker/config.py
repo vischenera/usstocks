@@ -80,4 +80,11 @@ PRESETS = {
         "min_mcap": 0, "max_mcap": float("inf"),
         "min_momentum": 0, "max_volatility": 999,
     },
+    "all_caps_90": {
+        "name": "All Caps (90d)",
+        "period_days": 90, "stop_percentage": 15,
+        "min_price": 5.0, "max_price": 100_000, "min_volume": 100_000,
+        "min_mcap": 0, "max_mcap": float("inf"),
+        "min_momentum": 0, "max_volatility": 999,
+    },
 }

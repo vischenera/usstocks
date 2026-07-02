@@ -6,18 +6,35 @@ import { calculateMetrics, Bar } from "@/lib/metrics";
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
 
-// Whitelist sortable columns (all numeric) — used for JS sort, never interpolated into SQL.
+// Whitelist sortable columns — used for JS sort, never interpolated into SQL.
+// Matches the clickable column headers in ScannerTable.
 const SORTABLE = new Set([
-  "period_gain_pct", "momentum_score", "volatility", "market_cap", "current_price",
+  "symbol", "company_name", "sector", "market_cap", "period_gain_pct",
+  "current_price", "trailing_stop_level", "avg_volume", "momentum_score", "volatility",
 ]);
 
-const NO_STORE = { headers: { "Cache-Control": "no-store, max-age=0" } };
+// Scan data changes at most once per worker run (daily + manual triggers), so
+// let the CDN serve repeat loads for 60s. Browsers still revalidate every time
+// (max-age=0); only Vercel's edge holds it. Status stays fully uncached — this
+// is deliberate and safe in a way the earlier stale-dashboard bug was not
+// (that was an unbounded driver-level cache, not a 60s edge TTL).
+const CACHE_SHORT = {
+  headers: { "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=300" },
+};
 
-// Descending numeric sort that treats a real 0 as 0, not "missing" — a plain
-// `Number(v) || -Infinity` sends legitimate zero values to the bottom.
-function sortDesc<T extends Record<string, any>>(rows: T[], key: string) {
-  const val = (v: any) => (v === null || v === undefined || Number.isNaN(Number(v)) ? -Infinity : Number(v));
-  rows.sort((a, b) => val(b[key]) - val(a[key]));
+// Sort that treats a real 0 as 0, not "missing" — a plain `Number(v) ||
+// -Infinity` sends legitimate zero values to the bottom. Strings sort
+// lexicographically; missing/NaN always sink to the end.
+function sortRows<T extends Record<string, any>>(rows: T[], key: string, dir: "asc" | "desc") {
+  const mul = dir === "asc" ? 1 : -1;
+  rows.sort((a, b) => {
+    const av = a[key], bv = b[key];
+    if (typeof av === "string" && typeof bv === "string") return mul * av.localeCompare(bv);
+    const an = Number(av), bn = Number(bv);
+    const A = Number.isFinite(an) ? an : dir === "asc" ? Infinity : -Infinity;
+    const B = Number.isFinite(bn) ? bn : dir === "asc" ? Infinity : -Infinity;
+    return mul * (A - B);
+  });
 }
 
 // Symbols keep at most this many stored days (mirrors worker/config.py WINDOW_DAYS).
@@ -86,8 +103,9 @@ export async function GET(req: NextRequest) {
   try {
     const sql = getSql();
     const p = req.nextUrl.searchParams;
-    const preset = p.get("preset") || "conservative_swing";
+    const preset = p.get("preset") || "all_caps_90";
     const sortKey = SORTABLE.has(p.get("sort") || "") ? (p.get("sort") as string) : "period_gain_pct";
+    const sortDir: "asc" | "desc" = p.get("dir") === "asc" ? "asc" : "desc";
     const limit = Math.min(1000, Math.max(1, Number(p.get("limit") || 300)));
     const onlyActive = p.get("onlyActive") === "1";
     const daysParam = Number(p.get("days"));
@@ -99,8 +117,8 @@ export async function GET(req: NextRequest) {
     if (wantsLive) {
       let rows = await computeLive(sql, preset, liveDays!);
       if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
-      sortDesc(rows, sortKey);
-      return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, NO_STORE);
+      sortRows(rows, sortKey, sortDir);
+      return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, CACHE_SHORT);
     }
 
     // Latest run that actually has rows for this preset.
@@ -113,8 +131,8 @@ export async function GET(req: NextRequest) {
       // scanned since deploy) — compute live instead of returning empty.
       let rows = liveDays ? await computeLive(sql, preset, liveDays) : [];
       if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
-      sortDesc(rows, sortKey);
-      return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, NO_STORE);
+      sortRows(rows, sortKey, sortDir);
+      return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, CACHE_SHORT);
     }
 
     // Parameterized fetch (two typed branches for the optional active filter).
@@ -156,9 +174,9 @@ export async function GET(req: NextRequest) {
     }));
 
     // Sort by the chosen numeric column (desc) and cap to limit.
-    sortDesc(coerced, sortKey);
+    sortRows(coerced, sortKey, sortDir);
 
-    return NextResponse.json({ runId, rows: coerced.slice(0, limit) }, NO_STORE);
+    return NextResponse.json({ runId, rows: coerced.slice(0, limit) }, CACHE_SHORT);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
