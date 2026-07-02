@@ -1,7 +1,5 @@
 "use client";
 
-import { useMemo, useState } from "react";
-
 export type Row = {
   symbol: string;
   company_name: string;
@@ -34,11 +32,11 @@ const fmtVol = (v: unknown) => {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${(n / 1e3).toFixed(0)}K`;
 };
 
-type ColumnKey =
+export type SortKey =
   | "symbol" | "company_name" | "sector" | "market_cap" | "period_gain_pct"
   | "current_price" | "trailing_stop_level" | "avg_volume" | "momentum_score";
 
-const COLUMNS: { key: ColumnKey; label: string; align?: "right" | "center" }[] = [
+const COLUMNS: { key: SortKey; label: string; align?: "right" | "center" }[] = [
   { key: "symbol", label: "Ticker" },
   { key: "company_name", label: "Company" },
   { key: "sector", label: "Sector" },
@@ -50,30 +48,20 @@ const COLUMNS: { key: ColumnKey; label: string; align?: "right" | "center" }[] =
   { key: "momentum_score", label: "Mom", align: "right" },
 ];
 
-export default function ScannerTable({ rows }: { rows: Row[] }) {
-  const [sortKey, setSortKey] = useState<ColumnKey | null>(null);
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-
-  const sorted = useMemo(() => {
-    if (!sortKey) return rows;
-    const copy = [...rows];
-    copy.sort((a, b) => {
-      const av = a[sortKey], bv = b[sortKey];
-      const cmp = typeof av === "string" ? String(av).localeCompare(String(bv)) : Number(av) - Number(bv);
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return copy;
-  }, [rows, sortKey, sortDir]);
-
-  const onHeaderClick = (key: ColumnKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
-  };
-
+// Sorting is fully server-driven: header clicks call onSort, the parent
+// refetches with the new sort params, and the server orders the FULL result
+// set before applying the row limit. (A previous client-side sort here only
+// reordered the already-truncated top-N of a different column's ranking,
+// which made "largest by MCap" depend on what happened to rank in the
+// top-N by gain.)
+export default function ScannerTable({
+  rows, sortKey, sortDir, onSort,
+}: {
+  rows: Row[];
+  sortKey: SortKey;
+  sortDir: "asc" | "desc";
+  onSort: (key: SortKey) => void;
+}) {
   if (!rows.length) {
     return <div className="rounded-lg border border-slate-800 p-8 text-center text-slate-400">No matches yet.</div>;
   }
@@ -85,7 +73,7 @@ export default function ScannerTable({ rows }: { rows: Row[] }) {
             <th className="px-3 py-2">#</th>
             {COLUMNS.map((c) => (
               <th key={c.key} className={`cursor-pointer select-none px-3 py-2 hover:text-slate-200 ${c.align === "right" ? "text-right" : ""}`}
-                onClick={() => onHeaderClick(c.key)}>
+                onClick={() => onSort(c.key)}>
                 {c.label}{sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
               </th>
             ))}
@@ -93,14 +81,18 @@ export default function ScannerTable({ rows }: { rows: Row[] }) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((r, i) => (
+          {rows.map((r, i) => (
             <tr key={r.symbol} className="border-t border-slate-800 hover:bg-slate-900/60">
               <td className="px-3 py-2 text-slate-500">{i + 1}</td>
               <td className="px-3 py-2 font-medium">
                 <a className="text-sky-400 hover:underline" href={`/stock/${r.symbol}`}>{r.symbol}</a>
               </td>
-              <td className="px-3 py-2 text-slate-300">{(r.company_name || "").slice(0, 28)}</td>
-              <td className="px-3 py-2 text-slate-400">{(r.sector || "").slice(0, 16)}</td>
+              <td className="px-3 py-2 text-slate-300">
+                <div className="max-w-[14rem] truncate" title={r.company_name || ""}>{r.company_name || ""}</div>
+              </td>
+              <td className="px-3 py-2 text-slate-400">
+                <div className="max-w-[9rem] truncate" title={r.sector || ""}>{r.sector || ""}</div>
+              </td>
               <td className="px-3 py-2 text-right">{fmtMcap(r.market_cap)}</td>
               <td className={`px-3 py-2 text-right ${num(r.period_gain_pct) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
                 {fmt(r.period_gain_pct, 1)}%
