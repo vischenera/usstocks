@@ -5,26 +5,19 @@ import StatusPanel from "@/components/StatusPanel";
 import ScannerTable, { Row, SortKey } from "@/components/ScannerTable";
 import { PRESETS, PRESET_DEFS } from "@/lib/presets";
 
-// Market-cap bands (USD). min/max of 0 means unbounded on that side.
-const MCAP_RANGES: { key: string; label: string; min: number; max: number }[] = [
-  { key: "any", label: "Any", min: 0, max: 0 },
-  { key: "mega", label: "Mega (≥ $200B)", min: 200e9, max: 0 },
-  { key: "large", label: "Large ($10B – $200B)", min: 10e9, max: 200e9 },
-  { key: "mid", label: "Mid ($2B – $10B)", min: 2e9, max: 10e9 },
-  { key: "small", label: "Small ($300M – $2B)", min: 300e6, max: 2e9 },
-  { key: "micro", label: "Micro (< $300M)", min: 0, max: 300e6 },
-];
-
-type Filters = { preset: string; days: number; onlyActive: boolean; mcap: string };
+// Market-cap range in $ billions, kept as strings so the inputs can be blank
+// (blank = unbounded on that side). Converted to dollars at fetch time.
+type Filters = { preset: string; days: number; onlyActive: boolean; mcapMinB: string; mcapMaxB: string };
 
 const DEFAULT_FILTERS: Filters = {
   preset: PRESETS[0].key,
   days: PRESET_DEFS[PRESETS[0].key]?.periodDays ?? 90,
   onlyActive: true,
-  mcap: "any",
+  mcapMinB: "",
+  mcapMaxB: "",
 };
 
-const STORAGE_KEY = "scanner-settings-v1";
+const STORAGE_KEY = "scanner-settings-v2";
 
 type Saved = { filters: Filters; sortKey: SortKey; sortDir: "asc" | "desc" };
 
@@ -34,6 +27,7 @@ function loadSaved(): Saved | null {
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (!s?.filters?.preset || !PRESET_DEFS[s.filters.preset]) return null;
+    if (typeof s.filters.mcapMinB !== "string" || typeof s.filters.mcapMaxB !== "string") return null;
     return s;
   } catch {
     return null;
@@ -59,7 +53,8 @@ export default function Dashboard() {
     form.preset !== applied.preset ||
     form.days !== applied.days ||
     form.onlyActive !== applied.onlyActive ||
-    form.mcap !== applied.mcap;
+    form.mcapMinB !== applied.mcapMinB ||
+    form.mcapMaxB !== applied.mcapMaxB;
 
   useEffect(() => {
     const saved = loadSaved();
@@ -93,7 +88,6 @@ export default function Dashboard() {
   useEffect(() => {
     if (!hydrated) return;
     setLoading(true);
-    const range = MCAP_RANGES.find((m) => m.key === applied.mcap) ?? MCAP_RANGES[0];
     const qs = new URLSearchParams({
       preset: applied.preset,
       days: String(applied.days),
@@ -102,8 +96,10 @@ export default function Dashboard() {
       limit: "300",
       onlyActive: applied.onlyActive ? "1" : "0",
     });
-    if (range.min > 0) qs.set("mcapMin", String(range.min));
-    if (range.max > 0) qs.set("mcapMax", String(range.max));
+    const minB = Number(applied.mcapMinB);
+    const maxB = Number(applied.mcapMaxB);
+    if (applied.mcapMinB !== "" && Number.isFinite(minB) && minB > 0) qs.set("mcapMin", String(minB * 1e9));
+    if (applied.mcapMaxB !== "" && Number.isFinite(maxB) && maxB > 0) qs.set("mcapMax", String(maxB * 1e9));
     fetch(`/api/results?${qs}`)
       .then((r) => r.json())
       .then((d) => setRows(d.rows || []))
@@ -147,14 +143,20 @@ export default function Dashboard() {
           />
         </label>
         <label className="text-sm">
-          <span className="mb-1 block text-slate-400">Market cap</span>
-          <select
-            value={form.mcap}
-            onChange={(e) => setForm((f) => ({ ...f, mcap: e.target.value }))}
-            className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5"
-          >
-            {MCAP_RANGES.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
-          </select>
+          <span className="mb-1 block text-slate-400">MCap min ($B)</span>
+          <input
+            type="number" min={0} step="any" placeholder="any" value={form.mcapMinB}
+            onChange={(e) => setForm((f) => ({ ...f, mcapMinB: e.target.value }))}
+            className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-1.5"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-slate-400">MCap max ($B)</span>
+          <input
+            type="number" min={0} step="any" placeholder="any" value={form.mcapMaxB}
+            onChange={(e) => setForm((f) => ({ ...f, mcapMaxB: e.target.value }))}
+            className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-1.5"
+          />
         </label>
         <label className="flex items-center gap-2 pb-2 text-sm">
           <input
