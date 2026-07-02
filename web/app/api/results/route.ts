@@ -110,6 +110,15 @@ export async function GET(req: NextRequest) {
     const onlyActive = p.get("onlyActive") === "1";
     const daysParam = Number(p.get("days"));
     const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(90, Math.max(1, daysParam)) : null;
+    // Optional market-cap band (dollars), layered on top of the preset's own
+    // mcap gates. 0 / missing means unbounded on that side.
+    const mcapMin = Math.max(0, Number(p.get("mcapMin")) || 0);
+    const mcapMaxRaw = Number(p.get("mcapMax"));
+    const mcapMax = Number.isFinite(mcapMaxRaw) && mcapMaxRaw > 0 ? mcapMaxRaw : Infinity;
+    const inMcapBand = (r: any) => {
+      const mc = Number(r.market_cap) || 0;
+      return mc >= mcapMin && mc <= mcapMax;
+    };
 
     const liveDays = days ?? PRESET_DEFS[preset]?.periodDays;
     const wantsLive = days !== null && days !== PRESET_DEFS[preset]?.periodDays;
@@ -117,6 +126,7 @@ export async function GET(req: NextRequest) {
     if (wantsLive) {
       let rows = await computeLive(sql, preset, liveDays!);
       if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
+      rows = rows.filter(inMcapBand);
       sortRows(rows, sortKey, sortDir);
       return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, CACHE_SHORT);
     }
@@ -131,6 +141,7 @@ export async function GET(req: NextRequest) {
       // scanned since deploy) — compute live instead of returning empty.
       let rows = liveDays ? await computeLive(sql, preset, liveDays) : [];
       if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
+      rows = rows.filter(inMcapBand);
       sortRows(rows, sortKey, sortDir);
       return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, CACHE_SHORT);
     }
@@ -173,10 +184,11 @@ export async function GET(req: NextRequest) {
       distance_to_stop_pct: safeNum(r.distance_to_stop_pct),
     }));
 
-    // Sort by the chosen numeric column (desc) and cap to limit.
-    sortRows(coerced, sortKey, sortDir);
+    // Band-filter, sort by the chosen column, and cap to limit.
+    const banded = coerced.filter(inMcapBand);
+    sortRows(banded, sortKey, sortDir);
 
-    return NextResponse.json({ runId, rows: coerced.slice(0, limit) }, CACHE_SHORT);
+    return NextResponse.json({ runId, rows: banded.slice(0, limit) }, CACHE_SHORT);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
