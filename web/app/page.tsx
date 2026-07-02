@@ -5,13 +5,40 @@ import StatusPanel from "@/components/StatusPanel";
 import ScannerTable, { Row, SortKey } from "@/components/ScannerTable";
 import { PRESETS, PRESET_DEFS } from "@/lib/presets";
 
-type Filters = { preset: string; days: number; onlyActive: boolean };
+// Market-cap bands (USD). min/max of 0 means unbounded on that side.
+const MCAP_RANGES: { key: string; label: string; min: number; max: number }[] = [
+  { key: "any", label: "Any", min: 0, max: 0 },
+  { key: "mega", label: "Mega (≥ $200B)", min: 200e9, max: 0 },
+  { key: "large", label: "Large ($10B – $200B)", min: 10e9, max: 200e9 },
+  { key: "mid", label: "Mid ($2B – $10B)", min: 2e9, max: 10e9 },
+  { key: "small", label: "Small ($300M – $2B)", min: 300e6, max: 2e9 },
+  { key: "micro", label: "Micro (< $300M)", min: 0, max: 300e6 },
+];
+
+type Filters = { preset: string; days: number; onlyActive: boolean; mcap: string };
 
 const DEFAULT_FILTERS: Filters = {
   preset: PRESETS[0].key,
   days: PRESET_DEFS[PRESETS[0].key]?.periodDays ?? 90,
   onlyActive: true,
+  mcap: "any",
 };
+
+const STORAGE_KEY = "scanner-settings-v1";
+
+type Saved = { filters: Filters; sortKey: SortKey; sortDir: "asc" | "desc" };
+
+function loadSaved(): Saved | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (!s?.filters?.preset || !PRESET_DEFS[s.filters.preset]) return null;
+    return s;
+  } catch {
+    return null;
+  }
+}
 
 export default function Dashboard() {
   const [status, setStatus] = useState<any>(null);
@@ -24,11 +51,33 @@ export default function Dashboard() {
   const [applied, setApplied] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("period_gain_pct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Settings restore from localStorage on mount; hold fetching until then so
+  // the first request uses the restored selection, not the defaults.
+  const [hydrated, setHydrated] = useState(false);
 
   const dirty =
     form.preset !== applied.preset ||
     form.days !== applied.days ||
-    form.onlyActive !== applied.onlyActive;
+    form.onlyActive !== applied.onlyActive ||
+    form.mcap !== applied.mcap;
+
+  useEffect(() => {
+    const saved = loadSaved();
+    if (saved) {
+      setForm(saved.filters);
+      setApplied(saved.filters);
+      setSortKey(saved.sortKey);
+      setSortDir(saved.sortDir);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ filters: applied, sortKey, sortDir } satisfies Saved));
+    } catch {}
+  }, [hydrated, applied, sortKey, sortDir]);
 
   useEffect(() => {
     const load = () =>
@@ -42,7 +91,9 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (!hydrated) return;
     setLoading(true);
+    const range = MCAP_RANGES.find((m) => m.key === applied.mcap) ?? MCAP_RANGES[0];
     const qs = new URLSearchParams({
       preset: applied.preset,
       days: String(applied.days),
@@ -51,12 +102,14 @@ export default function Dashboard() {
       limit: "300",
       onlyActive: applied.onlyActive ? "1" : "0",
     });
+    if (range.min > 0) qs.set("mcapMin", String(range.min));
+    if (range.max > 0) qs.set("mcapMax", String(range.max));
     fetch(`/api/results?${qs}`)
       .then((r) => r.json())
       .then((d) => setRows(d.rows || []))
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [applied, sortKey, sortDir]);
+  }, [hydrated, applied, sortKey, sortDir]);
 
   const onSort = (key: SortKey) => {
     if (key === sortKey) {
@@ -92,6 +145,16 @@ export default function Dashboard() {
             onChange={(e) => setForm((f) => ({ ...f, days: Math.min(90, Math.max(1, Number(e.target.value) || 1)) }))}
             className="w-20 rounded border border-slate-700 bg-slate-900 px-3 py-1.5"
           />
+        </label>
+        <label className="text-sm">
+          <span className="mb-1 block text-slate-400">Market cap</span>
+          <select
+            value={form.mcap}
+            onChange={(e) => setForm((f) => ({ ...f, mcap: e.target.value }))}
+            className="rounded border border-slate-700 bg-slate-900 px-3 py-1.5"
+          >
+            {MCAP_RANGES.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+          </select>
         </label>
         <label className="flex items-center gap-2 pb-2 text-sm">
           <input
