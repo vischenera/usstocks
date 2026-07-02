@@ -93,8 +93,11 @@ export async function GET(req: NextRequest) {
     const daysParam = Number(p.get("days"));
     const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(90, Math.max(1, daysParam)) : null;
 
-    if (days && days !== PRESET_DEFS[preset]?.periodDays) {
-      let rows = await computeLive(sql, preset, days);
+    const liveDays = days ?? PRESET_DEFS[preset]?.periodDays;
+    const wantsLive = days !== null && days !== PRESET_DEFS[preset]?.periodDays;
+
+    if (wantsLive) {
+      let rows = await computeLive(sql, preset, liveDays!);
       if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
       sortDesc(rows, sortKey);
       return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, NO_STORE);
@@ -105,7 +108,14 @@ export async function GET(req: NextRequest) {
       SELECT max(run_id) AS run_id FROM scan_results WHERE preset = ${preset}
     `;
     const runId = latest[0]?.run_id;
-    if (!runId) return NextResponse.json({ runId: null, rows: [] }, NO_STORE);
+    if (!runId) {
+      // No precomputed data yet (e.g. a newly added preset the worker hasn't
+      // scanned since deploy) — compute live instead of returning empty.
+      let rows = liveDays ? await computeLive(sql, preset, liveDays) : [];
+      if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
+      sortDesc(rows, sortKey);
+      return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, NO_STORE);
+    }
 
     // Parameterized fetch (two typed branches for the optional active filter).
     const rows = onlyActive
