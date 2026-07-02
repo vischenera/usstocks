@@ -134,13 +134,25 @@ export async function GET(req: NextRequest) {
           FROM scan_results
           WHERE run_id = ${runId} AND preset = ${preset}`;
 
-    // Neon returns BIGINT columns as strings — coerce to numbers so the
-    // Row type is honest and sorting/formatting is safe.
+    // Neon returns BIGINT columns as strings, and any numeric column can be
+    // null for a symbol with incomplete data — coerce everything to a real
+    // finite number so the client never has to defend against NaN/null/string.
+    const safeNum = (v: any) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
     const coerced = rows.map((r: any) => ({
       ...r,
-      market_cap: Number(r.market_cap),
-      volume: Number(r.volume),
-      avg_volume: Number(r.avg_volume),
+      market_cap: safeNum(r.market_cap),
+      volume: safeNum(r.volume),
+      avg_volume: safeNum(r.avg_volume),
+      current_price: safeNum(r.current_price),
+      period_gain_pct: safeNum(r.period_gain_pct),
+      momentum_score: safeNum(r.momentum_score),
+      volatility: safeNum(r.volatility),
+      highest_high: safeNum(r.highest_high),
+      trailing_stop_level: safeNum(r.trailing_stop_level),
+      distance_to_stop_pct: safeNum(r.distance_to_stop_pct),
     }));
 
     // Sort by the chosen numeric column (desc) and cap to limit.
