@@ -29,14 +29,16 @@ export default function CandleChart({ bars, stopPct = 10 }: { bars: Bar[]; stopP
     const { points, flips } = autoFlippingTrail(bars, stopPct);
     const longLine = chart.addLineSeries({ color: "#22c55e", lineWidth: 2 });
     const shortLine = chart.addLineSeries({ color: "#f97316", lineWidth: 2 });
-    // lightweight-charts treats a missing point as a real gap; NaN is not
-    // interpreted that way and was drawing both lines continuously across
-    // the whole range. Filter each series down to its own direction only.
+    // lightweight-charts needs an explicit whitespace point ({time} with no
+    // `value`) to render a real gap — omitting a date entirely just draws a
+    // straight connecting line across it, and NaN isn't recognized as a gap
+    // either. Every date must be present in both series: a real value for
+    // the active direction, whitespace for the inactive one.
     longLine.setData(
-      points.filter((p) => p.direction === "LONG").map((p) => ({ time: p.date, value: p.trail })) as any
+      points.map((p) => (p.direction === "LONG" ? { time: p.date, value: p.trail } : { time: p.date })) as any
     );
     shortLine.setData(
-      points.filter((p) => p.direction === "SHORT").map((p) => ({ time: p.date, value: p.trail })) as any
+      points.map((p) => (p.direction === "SHORT" ? { time: p.date, value: p.trail } : { time: p.date })) as any
     );
 
     if (flips.length) {
