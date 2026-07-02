@@ -1,5 +1,7 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
 export type Row = {
   symbol: string;
   company_name: string;
@@ -20,7 +22,46 @@ const fmtMcap = (v: number) =>
 const fmtVol = (v: number) =>
   v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${(v / 1e3).toFixed(0)}K`;
 
+type ColumnKey =
+  | "symbol" | "company_name" | "sector" | "market_cap" | "period_gain_pct"
+  | "current_price" | "trailing_stop_level" | "avg_volume" | "momentum_score";
+
+const COLUMNS: { key: ColumnKey; label: string; align?: "right" | "center" }[] = [
+  { key: "symbol", label: "Ticker" },
+  { key: "company_name", label: "Company" },
+  { key: "sector", label: "Sector" },
+  { key: "market_cap", label: "MCap", align: "right" },
+  { key: "period_gain_pct", label: "Gain%", align: "right" },
+  { key: "current_price", label: "Price", align: "right" },
+  { key: "trailing_stop_level", label: "Stop", align: "right" },
+  { key: "avg_volume", label: "Vol", align: "right" },
+  { key: "momentum_score", label: "Mom", align: "right" },
+];
+
 export default function ScannerTable({ rows }: { rows: Row[] }) {
+  const [sortKey, setSortKey] = useState<ColumnKey | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return rows;
+    const copy = [...rows];
+    copy.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      const cmp = typeof av === "string" ? String(av).localeCompare(String(bv)) : Number(av) - Number(bv);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+    return copy;
+  }, [rows, sortKey, sortDir]);
+
+  const onHeaderClick = (key: ColumnKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
   if (!rows.length) {
     return <div className="rounded-lg border border-slate-800 p-8 text-center text-slate-400">No matches yet.</div>;
   }
@@ -30,20 +71,17 @@ export default function ScannerTable({ rows }: { rows: Row[] }) {
         <thead className="bg-slate-900 text-left text-slate-400">
           <tr>
             <th className="px-3 py-2">#</th>
-            <th className="px-3 py-2">Ticker</th>
-            <th className="px-3 py-2">Company</th>
-            <th className="px-3 py-2">Sector</th>
-            <th className="px-3 py-2 text-right">MCap</th>
-            <th className="px-3 py-2 text-right">Gain%</th>
-            <th className="px-3 py-2 text-right">Price</th>
-            <th className="px-3 py-2 text-right">Stop</th>
-            <th className="px-3 py-2 text-right">Vol</th>
-            <th className="px-3 py-2 text-right">Mom</th>
+            {COLUMNS.map((c) => (
+              <th key={c.key} className={`cursor-pointer select-none px-3 py-2 hover:text-slate-200 ${c.align === "right" ? "text-right" : ""}`}
+                onClick={() => onHeaderClick(c.key)}>
+                {c.label}{sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+              </th>
+            ))}
             <th className="px-3 py-2 text-center">Status</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
+          {sorted.map((r, i) => (
             <tr key={r.symbol} className="border-t border-slate-800 hover:bg-slate-900/60">
               <td className="px-3 py-2 text-slate-500">{i + 1}</td>
               <td className="px-3 py-2 font-medium">
