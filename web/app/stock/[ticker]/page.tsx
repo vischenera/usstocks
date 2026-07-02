@@ -52,7 +52,16 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
       <div className="flex items-center justify-between">
         <div>
           <a href="/" className="text-sm text-sky-400 hover:underline">← Back</a>
-          <h1 className="text-2xl font-semibold">{symbol}</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-2xl font-semibold">{symbol}</h1>
+            <a
+              href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}`}
+              target="_blank" rel="noopener noreferrer"
+              className="text-sm text-sky-400 hover:underline"
+            >
+              TradingView ↗
+            </a>
+          </div>
           {meta && <p className="text-slate-400">{meta.company_name} · {meta.sector}</p>}
         </div>
         <label className="text-sm">
