@@ -15,11 +15,25 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
   const [stopInput, setStopInput] = useState("10");
   const [loading, setLoading] = useState(true);
 
+  // Restore the last-used stop % (shared across all symbols).
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem("chart-stop-pct"));
+      if (Number.isFinite(saved) && saved >= 0.1 && saved <= 90) {
+        setStopPct(saved);
+        setStopInput(String(saved));
+      }
+    } catch {}
+  }, []);
+
   const commitStop = () => {
     const n = Number(stopInput);
     const clamped = Number.isFinite(n) && n > 0 ? Math.min(90, Math.max(0.1, n)) : stopPct;
     setStopPct(clamped);
     setStopInput(String(clamped));
+    try {
+      localStorage.setItem("chart-stop-pct", String(clamped));
+    } catch {}
   };
 
   useEffect(() => {
