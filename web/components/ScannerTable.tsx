@@ -17,10 +17,22 @@ export type Row = {
   avg_volume: number;
 };
 
-const fmtMcap = (v: number) =>
-  v >= 1e9 ? `$${(v / 1e9).toFixed(1)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(0)}M` : `$${v}`;
-const fmtVol = (v: number) =>
-  v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : `${(v / 1e3).toFixed(0)}K`;
+// DB columns can arrive as null/string/NaN depending on source (worker vs.
+// live-compute) — never trust a raw field before calling .toFixed() on it.
+const num = (v: unknown): number => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+const fmt = (v: unknown, digits: number) => num(v).toFixed(digits);
+
+const fmtMcap = (v: unknown) => {
+  const n = num(v);
+  return n >= 1e9 ? `$${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `$${(n / 1e6).toFixed(0)}M` : `$${n}`;
+};
+const fmtVol = (v: unknown) => {
+  const n = num(v);
+  return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : `${(n / 1e3).toFixed(0)}K`;
+};
 
 type ColumnKey =
   | "symbol" | "company_name" | "sector" | "market_cap" | "period_gain_pct"
@@ -90,13 +102,13 @@ export default function ScannerTable({ rows }: { rows: Row[] }) {
               <td className="px-3 py-2 text-slate-300">{(r.company_name || "").slice(0, 28)}</td>
               <td className="px-3 py-2 text-slate-400">{(r.sector || "").slice(0, 16)}</td>
               <td className="px-3 py-2 text-right">{fmtMcap(r.market_cap)}</td>
-              <td className={`px-3 py-2 text-right ${r.period_gain_pct >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                {r.period_gain_pct.toFixed(1)}%
+              <td className={`px-3 py-2 text-right ${num(r.period_gain_pct) >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                {fmt(r.period_gain_pct, 1)}%
               </td>
-              <td className="px-3 py-2 text-right">${r.current_price.toFixed(2)}</td>
-              <td className="px-3 py-2 text-right text-slate-400">${r.trailing_stop_level.toFixed(2)}</td>
+              <td className="px-3 py-2 text-right">${fmt(r.current_price, 2)}</td>
+              <td className="px-3 py-2 text-right text-slate-400">${fmt(r.trailing_stop_level, 2)}</td>
               <td className="px-3 py-2 text-right text-slate-400">{fmtVol(r.avg_volume)}</td>
-              <td className="px-3 py-2 text-right">{r.momentum_score.toFixed(1)}</td>
+              <td className="px-3 py-2 text-right">{fmt(r.momentum_score, 1)}</td>
               <td className="px-3 py-2 text-center">
                 {r.stop_triggered ? (
                   <span className="text-rose-400">✕ Stop</span>
