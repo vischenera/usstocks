@@ -19,6 +19,7 @@ export type Row = {
   vol_expansion?: number;
   breakout_age?: number | null;
   breakout_score?: number;
+  slope3_pct_day?: number;
 };
 
 // DB columns can arrive as null/string/NaN depending on source (worker vs.
@@ -134,6 +135,10 @@ export default function ScannerTable({
               <td className="px-3 py-2 text-center">
                 {r.stop_triggered ? (
                   <span className="text-rose-400">✕ Stop</span>
+                ) : r.breakout_age != null && r.breakout_age >= 5 && num(r.slope3_pct_day) <= 0 ? (
+                  // Move is ~a week old and short-term momentum has died:
+                  // the "step out" signal, ahead of the deeper trailing stop.
+                  <span className="text-amber-400">▼ Fading</span>
                 ) : (
                   <span className="text-emerald-400">● Live</span>
                 )}

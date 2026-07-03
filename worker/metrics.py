@@ -109,6 +109,7 @@ def breakout_metrics(bars):
     out = {
         "slope_pct_day": 0.0, "trend_r2": 0.0, "up_day_ratio": 0.0,
         "vol_expansion": 0.0, "breakout_age": None, "breakout_score": 0.0,
+        "slope3_pct_day": 0.0,
     }
     if not bars or len(bars) < SLOPE_WINDOW + 2:
         return out
@@ -158,6 +159,12 @@ def breakout_metrics(bars):
         if prior_high is not None and c is not None and c > prior_high:
             out["breakout_age"] = age
             break
+
+    # Short-horizon slope (last 3 sessions, %/day): the "is the move still
+    # alive" check. Entry is early (age 0-2); once age >= 5 a non-positive
+    # 3-day slope marks the move as fading -> step out.
+    if len(closes) >= 4 and closes[-4] and closes[-1]:
+        out["slope3_pct_day"] = ((closes[-1] / closes[-4]) - 1) / 3 * 100
 
     out["breakout_score"] = max(0.0, out["slope_pct_day"]) * max(0.0, out["trend_r2"])
     return out
