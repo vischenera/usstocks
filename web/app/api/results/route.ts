@@ -110,6 +110,33 @@ async function computeLive(sql: ReturnType<typeof getSql>, preset: string, days:
   return rows;
 }
 
+// Attach a per-row `spark` array (ascending closes over the requested window)
+// to the FINAL, already-limited row set — one windowed query for <= `limit`
+// symbols, shared by all three result paths.
+async function attachSparks(sql: ReturnType<typeof getSql>, rows: any[], days: number) {
+  if (!rows.length) return rows;
+  const window = Math.min(90, Math.max(5, days));
+  const symbols = rows.map((r) => r.symbol);
+  const sparkRows = await sql`
+    SELECT symbol, close FROM (
+      SELECT symbol, date, close,
+             row_number() OVER (PARTITION BY symbol ORDER BY date DESC) AS rn
+      FROM daily_ohlcv
+      WHERE symbol = ANY(${symbols}) AND close IS NOT NULL
+    ) t
+    WHERE rn <= ${window}
+    ORDER BY symbol, date ASC
+  `;
+  const bySymbol = new Map<string, number[]>();
+  for (const r of sparkRows as any[]) {
+    const arr = bySymbol.get(r.symbol) ?? [];
+    arr.push(Number(r.close));
+    bySymbol.set(r.symbol, arr);
+  }
+  for (const r of rows) r.spark = bySymbol.get(r.symbol) ?? [];
+  return rows;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const sql = getSql();
@@ -139,7 +166,8 @@ export async function GET(req: NextRequest) {
       if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
       rows = rows.filter(inMcapBand);
       sortRows(rows, sortKey, sortDir);
-      return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, CACHE_SHORT);
+      const out = await attachSparks(sql, rows.slice(0, limit), liveDays!);
+      return NextResponse.json({ runId: null, rows: out }, CACHE_SHORT);
     }
 
     // Latest run that actually has rows for this preset.
@@ -154,7 +182,8 @@ export async function GET(req: NextRequest) {
       if (onlyActive) rows = rows.filter((r) => !r.stop_triggered);
       rows = rows.filter(inMcapBand);
       sortRows(rows, sortKey, sortDir);
-      return NextResponse.json({ runId: null, rows: rows.slice(0, limit) }, CACHE_SHORT);
+      const out = await attachSparks(sql, rows.slice(0, limit), liveDays ?? 30);
+      return NextResponse.json({ runId: null, rows: out }, CACHE_SHORT);
     }
 
     // Parameterized fetch (two typed branches for the optional active filter).
@@ -208,8 +237,9 @@ export async function GET(req: NextRequest) {
     // Band-filter, sort by the chosen column, and cap to limit.
     const banded = coerced.filter(inMcapBand);
     sortRows(banded, sortKey, sortDir);
+    const out = await attachSparks(sql, banded.slice(0, limit), liveDays ?? 30);
 
-    return NextResponse.json({ runId, rows: banded.slice(0, limit) }, CACHE_SHORT);
+    return NextResponse.json({ runId, rows: out }, CACHE_SHORT);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

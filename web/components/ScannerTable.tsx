@@ -20,7 +20,30 @@ export type Row = {
   breakout_age?: number | null;
   breakout_score?: number;
   slope3_pct_day?: number;
+  spark?: number[];
 };
+
+// Inline price sparkline: closes over the selected period, colored by the
+// app's up/down status tokens (polarity is also carried by the line's shape,
+// so color is never the only encoding). No axes — it's a glance, not a chart.
+function Spark({ data }: { data?: number[] }) {
+  if (!data || data.length < 2) return <span className="text-slate-600">—</span>;
+  const w = 76, h = 24, pad = 2;
+  const min = Math.min(...data), max = Math.max(...data);
+  const span = max - min || 1;
+  const pts = data.map((v, i) =>
+    `${(pad + (i * (w - 2 * pad)) / (data.length - 1)).toFixed(1)},${(h - pad - ((v - min) / span) * (h - 2 * pad)).toFixed(1)}`
+  );
+  const color = data[data.length - 1] >= data[0] ? "#34d399" : "#f87171";
+  const [lx, ly] = pts[pts.length - 1].split(",");
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" className="block">
+      <polyline points={pts.join(" ")} fill="none" stroke={color} strokeWidth="1.5"
+        strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={lx} cy={ly} r="2" fill={color} />
+    </svg>
+  );
+}
 
 // DB columns can arrive as null/string/NaN depending on source (worker vs.
 // live-compute) — never trust a raw field before calling .toFixed() on it.
@@ -84,12 +107,18 @@ export default function ScannerTable({
         <thead className="bg-slate-900 text-left text-slate-400">
           <tr>
             <th className="px-3 py-2">#</th>
-            {COLUMNS.map((c) => (
-              <th key={c.key} className={`cursor-pointer select-none px-3 py-2 hover:text-slate-200 ${c.align === "right" ? "text-right" : ""}`}
-                onClick={() => onSort(c.key)}>
-                {c.label}{sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
-              </th>
-            ))}
+            {COLUMNS.flatMap((c) => {
+              const th = (
+                <th key={c.key} className={`cursor-pointer select-none px-3 py-2 hover:text-slate-200 ${c.align === "right" ? "text-right" : ""}`}
+                  onClick={() => onSort(c.key)}>
+                  {c.label}{sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
+                </th>
+              );
+              // Non-sortable sparkline column, pinned right after Ticker.
+              return c.key === "symbol"
+                ? [th, <th key="trend" className="px-3 py-2">Trend</th>]
+                : [th];
+            })}
             <th className="px-3 py-2 text-center">Status</th>
           </tr>
         </thead>
@@ -99,6 +128,11 @@ export default function ScannerTable({
               <td className="px-3 py-2 text-slate-500">{i + 1}</td>
               <td className="px-3 py-2 font-medium">
                 <a className="text-sky-400 hover:underline" href={`/stock/${r.symbol}`}>{r.symbol}</a>
+              </td>
+              <td className="px-3 py-2">
+                <a href={`/stock/${r.symbol}`} aria-label={`${r.symbol} chart`}>
+                  <Spark data={r.spark} />
+                </a>
               </td>
               <td className="px-3 py-2 text-slate-300">
                 <div className="max-w-[14rem] truncate" title={r.company_name || ""}>{r.company_name || ""}</div>
