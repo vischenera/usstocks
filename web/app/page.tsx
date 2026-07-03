@@ -166,7 +166,15 @@ export default function Dashboard() {
           <span>Active only (stop not triggered)</span>
         </label>
         <button
-          onClick={() => setApplied(form)}
+          onClick={() => {
+            // Switching into the breakout preset auto-ranks by its score;
+            // header clicks still override afterwards.
+            if (form.preset === "breakout" && applied.preset !== "breakout") {
+              setSortKey("breakout_score");
+              setSortDir("desc");
+            }
+            setApplied(form);
+          }}
           disabled={!dirty || loading}
           className={`rounded px-4 py-1.5 text-sm font-medium ${
             dirty && !loading

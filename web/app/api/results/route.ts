@@ -11,7 +11,7 @@ export const fetchCache = "force-no-store";
 const SORTABLE = new Set([
   "symbol", "company_name", "sector", "market_cap", "period_gain_pct",
   "current_price", "trailing_stop_level", "avg_volume", "momentum_score", "volatility",
-  "slope_pct_day", "breakout_score",
+  "slope_pct_day", "breakout_score", "breakout_age", "up_day_ratio", "vol_expansion",
 ]);
 
 // Scan data changes at most once per worker run (daily + manual triggers), so
