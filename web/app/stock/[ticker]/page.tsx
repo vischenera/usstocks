@@ -58,6 +58,17 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
     return { trail, price, distPct, direction: currentDirection };
   }, [bars, stopPct]);
 
+  // Short-horizon momentum: 3-session slope (%/day). Positive = the move is
+  // still alive; non-positive = fading, consider stepping out ahead of the
+  // (deeper) trailing stop.
+  const slope3 = useMemo(() => {
+    if (bars.length < 4) return null;
+    const c1 = bars[bars.length - 1]?.close;
+    const c4 = bars[bars.length - 4]?.close;
+    if (!c1 || !c4) return null;
+    return ((c1 / c4) - 1) / 3 * 100;
+  }, [bars]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -76,13 +87,25 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
           {meta && <p className="text-slate-400">{meta.company_name} · {meta.sector}</p>}
           {exit && (
             <p className="mt-1 text-sm">
-              <span className="text-slate-400">Expected exit ({exit.direction}): </span>
+              <span className="text-slate-400">
+                {exit.direction === "LONG" ? "Expected exit (LONG): " : "Stopped out — re-entry trigger: "}
+              </span>
               <span className={exit.direction === "LONG" ? "text-emerald-400" : "text-orange-400"}>
                 ${exit.trail.toFixed(2)}
               </span>
               <span className="ml-1 text-slate-500">
                 ({exit.distPct >= 0 ? "−" : "+"}{Math.abs(exit.distPct).toFixed(1)}% {exit.direction === "LONG" ? "below" : "above"} price)
               </span>
+            </p>
+          )}
+          {slope3 !== null && exit?.direction === "LONG" && (
+            <p className="text-sm">
+              <span className="text-slate-400">Momentum (3d): </span>
+              {slope3 > 0 ? (
+                <span className="text-emerald-400">sustaining · +{slope3.toFixed(1)}%/day</span>
+              ) : (
+                <span className="text-amber-400">fading · {slope3.toFixed(1)}%/day — consider stepping out</span>
+              )}
             </p>
           )}
         </div>

@@ -194,7 +194,7 @@ def insert_results(conn, run_id, preset, results):
         "highest_high", "trailing_stop_level", "distance_to_stop_pct",
         "stop_triggered", "volume", "avg_volume",
         "slope_pct_day", "trend_r2", "up_day_ratio", "vol_expansion",
-        "breakout_age", "breakout_score",
+        "breakout_age", "breakout_score", "slope3_pct_day",
     ]
     with conn.cursor() as cur:
         psycopg2.extras.execute_values(
@@ -206,7 +206,7 @@ def insert_results(conn, run_id, preset, results):
                 highest_high, trailing_stop_level, distance_to_stop_pct,
                 stop_triggered, volume, avg_volume,
                 slope_pct_day, trend_r2, up_day_ratio, vol_expansion,
-                breakout_age, breakout_score
+                breakout_age, breakout_score, slope3_pct_day
             ) VALUES %s
             ON CONFLICT (run_id, preset, symbol) DO NOTHING
             """,

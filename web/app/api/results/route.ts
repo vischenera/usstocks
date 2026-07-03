@@ -164,7 +164,7 @@ export async function GET(req: NextRequest) {
                  period_gain_pct, momentum_score, volatility, highest_high,
                  trailing_stop_level, distance_to_stop_pct, stop_triggered,
                  volume, avg_volume, slope_pct_day, trend_r2, up_day_ratio,
-                 vol_expansion, breakout_age, breakout_score
+                 vol_expansion, breakout_age, breakout_score, slope3_pct_day
           FROM scan_results
           WHERE run_id = ${runId} AND preset = ${preset} AND stop_triggered = false`
       : await sql`
@@ -172,7 +172,7 @@ export async function GET(req: NextRequest) {
                  period_gain_pct, momentum_score, volatility, highest_high,
                  trailing_stop_level, distance_to_stop_pct, stop_triggered,
                  volume, avg_volume, slope_pct_day, trend_r2, up_day_ratio,
-                 vol_expansion, breakout_age, breakout_score
+                 vol_expansion, breakout_age, breakout_score, slope3_pct_day
           FROM scan_results
           WHERE run_id = ${runId} AND preset = ${preset}`;
 
@@ -200,6 +200,7 @@ export async function GET(req: NextRequest) {
       up_day_ratio: safeNum(r.up_day_ratio),
       vol_expansion: safeNum(r.vol_expansion),
       breakout_score: safeNum(r.breakout_score),
+      slope3_pct_day: safeNum(r.slope3_pct_day),
       // 0 means "broke out today" — keep null (no recent breakout) distinct.
       breakout_age: r.breakout_age === null || r.breakout_age === undefined ? null : Number(r.breakout_age),
     }));
