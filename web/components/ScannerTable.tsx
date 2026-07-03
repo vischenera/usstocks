@@ -13,6 +13,12 @@ export type Row = {
   distance_to_stop_pct: number;
   stop_triggered: boolean;
   avg_volume: number;
+  slope_pct_day?: number;
+  trend_r2?: number;
+  up_day_ratio?: number;
+  vol_expansion?: number;
+  breakout_age?: number | null;
+  breakout_score?: number;
 };
 
 // DB columns can arrive as null/string/NaN depending on source (worker vs.
@@ -34,7 +40,8 @@ const fmtVol = (v: unknown) => {
 
 export type SortKey =
   | "symbol" | "company_name" | "sector" | "market_cap" | "period_gain_pct"
-  | "current_price" | "trailing_stop_level" | "avg_volume" | "momentum_score";
+  | "current_price" | "trailing_stop_level" | "avg_volume" | "momentum_score"
+  | "slope_pct_day" | "breakout_score" | "breakout_age" | "up_day_ratio" | "vol_expansion";
 
 const COLUMNS: { key: SortKey; label: string; align?: "right" | "center" }[] = [
   { key: "symbol", label: "Ticker" },
@@ -43,7 +50,12 @@ const COLUMNS: { key: SortKey; label: string; align?: "right" | "center" }[] = [
   { key: "market_cap", label: "MCap", align: "right" },
   { key: "period_gain_pct", label: "Gain%", align: "right" },
   { key: "current_price", label: "Price", align: "right" },
-  { key: "trailing_stop_level", label: "Stop", align: "right" },
+  { key: "trailing_stop_level", label: "Exit", align: "right" },
+  { key: "breakout_score", label: "Score", align: "right" },
+  { key: "breakout_age", label: "Age", align: "right" },
+  { key: "slope_pct_day", label: "Slope", align: "right" },
+  { key: "up_day_ratio", label: "Up%", align: "right" },
+  { key: "vol_expansion", label: "Vol×", align: "right" },
   { key: "avg_volume", label: "Vol", align: "right" },
   { key: "momentum_score", label: "Mom", align: "right" },
 ];
@@ -98,7 +110,25 @@ export default function ScannerTable({
                 {fmt(r.period_gain_pct, 1)}%
               </td>
               <td className="px-3 py-2 text-right">${fmt(r.current_price, 2)}</td>
-              <td className="px-3 py-2 text-right text-slate-400">${fmt(r.trailing_stop_level, 2)}</td>
+              <td className="px-3 py-2 text-right text-slate-400">
+                ${fmt(r.trailing_stop_level, 2)}
+                <span className="ml-1 text-xs text-slate-500">−{fmt(r.distance_to_stop_pct, 1)}%</span>
+              </td>
+              <td className="px-3 py-2 text-right font-medium text-sky-300">
+                {r.breakout_score == null ? "—" : fmt(r.breakout_score, 2)}
+              </td>
+              <td className="px-3 py-2 text-right text-slate-400">
+                {r.breakout_age == null ? "—" : `${r.breakout_age}d`}
+              </td>
+              <td className="px-3 py-2 text-right text-slate-400">
+                {r.slope_pct_day == null ? "—" : `${fmt(r.slope_pct_day, 2)}%`}
+              </td>
+              <td className="px-3 py-2 text-right text-slate-400">
+                {r.up_day_ratio == null ? "—" : `${fmt(num(r.up_day_ratio) * 100, 0)}%`}
+              </td>
+              <td className="px-3 py-2 text-right text-slate-400">
+                {r.vol_expansion == null ? "—" : `${fmt(r.vol_expansion, 1)}×`}
+              </td>
               <td className="px-3 py-2 text-right text-slate-400">{fmtVol(r.avg_volume)}</td>
               <td className="px-3 py-2 text-right">{fmt(r.momentum_score, 1)}</td>
               <td className="px-3 py-2 text-center">

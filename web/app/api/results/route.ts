@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
 import { PRESET_DEFS } from "@/lib/presets";
-import { calculateMetrics, Bar } from "@/lib/metrics";
+import { breakoutMetrics, calculateMetrics, Bar } from "@/lib/metrics";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -11,6 +11,7 @@ export const fetchCache = "force-no-store";
 const SORTABLE = new Set([
   "symbol", "company_name", "sector", "market_cap", "period_gain_pct",
   "current_price", "trailing_stop_level", "avg_volume", "momentum_score", "volatility",
+  "slope_pct_day", "breakout_score", "breakout_age", "up_day_ratio", "vol_expansion",
 ]);
 
 // Scan data changes at most once per worker run (daily + manual triggers), so
@@ -90,11 +91,21 @@ async function computeLive(sql: ReturnType<typeof getSql>, preset: string, days:
     if (fullHistoryAvgVolume < def.minVolume) continue;
     if (m.market_cap < def.minMcap || m.market_cap > def.maxMcap) continue;
 
+    // Breakout gates (mirrors worker/scan.py evaluate_symbol).
+    const bm = breakoutMetrics(bars);
+    if (def.minSlopePctDay !== undefined) {
+      if (bm.slope_pct_day < def.minSlopePctDay) continue;
+      if (bm.trend_r2 < (def.minTrendR2 ?? 0)) continue;
+      if (bm.up_day_ratio < (def.minUpDayRatio ?? 0)) continue;
+      if (bm.vol_expansion < (def.minVolExpansion ?? 0)) continue;
+      if (bm.breakout_age === null || bm.breakout_age > (def.maxBreakoutAge ?? Infinity)) continue;
+    }
+
     const metrics = calculateMetrics(bars, days, def.stopPercentage, def.isIntraday);
     if (!metrics) continue;
     if (metrics.momentum_score < def.minMomentum) continue;
     if (def.maxVolatility < 999 && metrics.volatility > def.maxVolatility) continue;
-    rows.push({ symbol, company_name: m.company_name, sector: m.sector, market_cap: m.market_cap, ...metrics });
+    rows.push({ symbol, company_name: m.company_name, sector: m.sector, market_cap: m.market_cap, ...metrics, ...bm });
   }
   return rows;
 }
@@ -152,14 +163,16 @@ export async function GET(req: NextRequest) {
           SELECT symbol, company_name, sector, market_cap, current_price,
                  period_gain_pct, momentum_score, volatility, highest_high,
                  trailing_stop_level, distance_to_stop_pct, stop_triggered,
-                 volume, avg_volume
+                 volume, avg_volume, slope_pct_day, trend_r2, up_day_ratio,
+                 vol_expansion, breakout_age, breakout_score
           FROM scan_results
           WHERE run_id = ${runId} AND preset = ${preset} AND stop_triggered = false`
       : await sql`
           SELECT symbol, company_name, sector, market_cap, current_price,
                  period_gain_pct, momentum_score, volatility, highest_high,
                  trailing_stop_level, distance_to_stop_pct, stop_triggered,
-                 volume, avg_volume
+                 volume, avg_volume, slope_pct_day, trend_r2, up_day_ratio,
+                 vol_expansion, breakout_age, breakout_score
           FROM scan_results
           WHERE run_id = ${runId} AND preset = ${preset}`;
 
@@ -182,6 +195,13 @@ export async function GET(req: NextRequest) {
       highest_high: safeNum(r.highest_high),
       trailing_stop_level: safeNum(r.trailing_stop_level),
       distance_to_stop_pct: safeNum(r.distance_to_stop_pct),
+      slope_pct_day: safeNum(r.slope_pct_day),
+      trend_r2: safeNum(r.trend_r2),
+      up_day_ratio: safeNum(r.up_day_ratio),
+      vol_expansion: safeNum(r.vol_expansion),
+      breakout_score: safeNum(r.breakout_score),
+      // 0 means "broke out today" — keep null (no recent breakout) distinct.
+      breakout_age: r.breakout_age === null || r.breakout_age === undefined ? null : Number(r.breakout_age),
     }));
 
     // Band-filter, sort by the chosen column, and cap to limit.

@@ -93,3 +93,82 @@ export function calculateMetrics(
     avg_volume: avgVolume,
   };
 }
+
+// ---- Breakout detection — ported from worker/metrics.py breakout_metrics().
+// Keep both in sync. Windows are fixed (not tied to the requested day range).
+
+const SLOPE_WINDOW = 10;
+const VOL_BASELINE = 30;
+const BREAKOUT_LOOKBACK = 20;
+const BREAKOUT_RECENT = 5;
+
+export type BreakoutMetrics = {
+  slope_pct_day: number;
+  trend_r2: number;
+  up_day_ratio: number;
+  vol_expansion: number;
+  breakout_age: number | null;
+  breakout_score: number;
+};
+
+export function breakoutMetrics(bars: Bar[]): BreakoutMetrics {
+  const out: BreakoutMetrics = {
+    slope_pct_day: 0, trend_r2: 0, up_day_ratio: 0,
+    vol_expansion: 0, breakout_age: null, breakout_score: 0,
+  };
+  if (!bars || bars.length < SLOPE_WINDOW + 2) return out;
+  const closes = bars.map((b) => b.close);
+  const highs = bars.map((b) => b.high);
+  const volumes = bars.map((b) => b.volume);
+  const tail = closes.slice(-SLOPE_WINDOW);
+  if (tail.some((c) => c === null || c === undefined || c <= 0)) return out;
+
+  const n = tail.length;
+  const meanX = (n - 1) / 2;
+  const meanY = tail.reduce((a, b) => a + b, 0) / n;
+  let sxx = 0, sxy = 0;
+  tail.forEach((y, x) => {
+    sxx += (x - meanX) ** 2;
+    sxy += (x - meanX) * (y - meanY);
+  });
+  if (sxx > 0 && meanY > 0) {
+    const slope = sxy / sxx;
+    out.slope_pct_day = (slope / meanY) * 100;
+    const ssTot = tail.reduce((a, y) => a + (y - meanY) ** 2, 0);
+    if (ssTot > 0) {
+      const ssRes = tail.reduce((a, y, x) => a + (y - (meanY + slope * (x - meanX))) ** 2, 0);
+      out.trend_r2 = Math.max(0, 1 - ssRes / ssTot);
+    }
+  }
+
+  let ups = 0;
+  for (let i = closes.length - SLOPE_WINDOW; i < closes.length; i++) {
+    if (closes[i] != null && closes[i - 1] && closes[i] > closes[i - 1]) ups++;
+  }
+  out.up_day_ratio = ups / SLOPE_WINDOW;
+
+  const recentVol = volumes.slice(-SLOPE_WINDOW);
+  const priorVol = volumes.slice(-(SLOPE_WINDOW + VOL_BASELINE), -SLOPE_WINDOW);
+  const recentAvg = recentVol.reduce((a, v) => a + (v || 0), 0) / recentVol.length;
+  if (priorVol.length) {
+    const priorAvg = priorVol.reduce((a, v) => a + (v || 0), 0) / priorVol.length;
+    if (priorAvg > 0) out.vol_expansion = recentAvg / priorAvg;
+  }
+
+  const last = bars.length - 1;
+  for (let age = 0; age < BREAKOUT_RECENT; age++) {
+    const idx = last - age;
+    if (idx - BREAKOUT_LOOKBACK < 0) break;
+    const window = highs.slice(idx - BREAKOUT_LOOKBACK, idx).filter((h) => h != null);
+    if (!window.length) continue;
+    const priorHigh = Math.max(...window);
+    const c = closes[idx];
+    if (c != null && c > priorHigh) {
+      out.breakout_age = age;
+      break;
+    }
+  }
+
+  out.breakout_score = Math.max(0, out.slope_pct_day) * Math.max(0, out.trend_r2);
+  return out;
+}
