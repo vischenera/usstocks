@@ -166,5 +166,11 @@ def breakout_metrics(bars):
     if len(closes) >= 4 and closes[-4] and closes[-1]:
         out["slope3_pct_day"] = ((closes[-1] / closes[-4]) - 1) / 3 * 100
 
-    out["breakout_score"] = max(0.0, out["slope_pct_day"]) * max(0.0, out["trend_r2"])
+    # Ranking blends the 10d and 3d slopes (geometric mean) so the score
+    # decays the same day momentum dies (slope3 <= 0 -> 0) and fresh
+    # ignitions outrank stale runs, while a single small red day only
+    # dents it. R^2 still scales for trend cleanliness.
+    out["breakout_score"] = out["trend_r2"] * math.sqrt(
+        max(0.0, out["slope_pct_day"]) * max(0.0, out["slope3_pct_day"])
+    )
     return out

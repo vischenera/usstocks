@@ -179,6 +179,12 @@ export function breakoutMetrics(bars: Bar[]): BreakoutMetrics {
     out.slope3_pct_day = ((c1 / c4) - 1) / 3 * 100;
   }
 
-  out.breakout_score = Math.max(0, out.slope_pct_day) * Math.max(0, out.trend_r2);
+  // Ranking blends the 10d and 3d slopes (geometric mean) so the score
+  // decays the same day momentum dies (slope3 <= 0 -> 0) and fresh
+  // ignitions outrank stale runs, while a single small red day only
+  // dents it. R^2 still scales for trend cleanliness.
+  out.breakout_score = out.trend_r2 * Math.sqrt(
+    Math.max(0, out.slope_pct_day) * Math.max(0, out.slope3_pct_day)
+  );
   return out;
 }
