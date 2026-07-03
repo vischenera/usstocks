@@ -1,8 +1,22 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { createChart, ColorType, IChartApi } from "lightweight-charts";
+import { createChart, ColorType, IChartApi, TickMarkType } from "lightweight-charts";
 import { autoFlippingTrail, Bar } from "@/lib/trail";
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// Short labels ("12 May") so the auto tick-spacer fits several marks even on
+// a phone-width chart — the default formatter only labeled month boundaries,
+// leaving the axis mostly blank.
+function tickFormatter(time: any, tickMarkType: TickMarkType): string {
+  const d = typeof time === "string"
+    ? new Date(time)
+    : new Date(time.year, time.month - 1, time.day);
+  if (tickMarkType === TickMarkType.Year) return String(d.getFullYear());
+  if (tickMarkType === TickMarkType.Month) return MONTHS[d.getMonth()];
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
 
 export default function CandleChart({ bars, stopPct = 10 }: { bars: Bar[]; stopPct?: number }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -14,8 +28,12 @@ export default function CandleChart({ bars, stopPct = 10 }: { bars: Bar[]; stopP
       layout: { background: { type: ColorType.Solid, color: "#020617" }, textColor: "#cbd5e1" },
       grid: { vertLines: { color: "#1e293b" }, horzLines: { color: "#1e293b" } },
       height: 460,
-      timeScale: { borderColor: "#334155" },
-      rightPriceScale: { borderColor: "#334155" },
+      timeScale: { borderColor: "#334155", tickMarkFormatter: tickFormatter },
+      rightPriceScale: {
+        borderColor: "#334155",
+        // Reserve the bottom fifth of the pane for the volume histogram.
+        scaleMargins: { top: 0.05, bottom: 0.25 },
+      },
     });
 
     const candles = chart.addCandlestickSeries({
@@ -24,6 +42,24 @@ export default function CandleChart({ bars, stopPct = 10 }: { bars: Bar[]; stopP
       wickUpColor: "#10b981", wickDownColor: "#ef4444",
     });
     candles.setData(bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })));
+
+    // Volume histogram on its own hidden price scale, pinned to the bottom
+    // fifth of the chart, tinted by up/down day.
+    const volume = chart.addHistogramSeries({
+      priceScaleId: "vol",
+      priceFormat: { type: "volume" },
+      lastValueVisible: false,
+      priceLineVisible: false,
+    });
+    chart.priceScale("vol").applyOptions({
+      scaleMargins: { top: 0.82, bottom: 0 },
+      visible: false,
+    });
+    volume.setData(bars.map((b) => ({
+      time: b.date,
+      value: b.volume,
+      color: b.close >= b.open ? "rgba(16, 185, 129, 0.45)" : "rgba(239, 68, 68, 0.45)",
+    })));
 
     // Auto-flipping trailing stop overlay: ONE continuous line whose color
     // switches at each flip via lightweight-charts' per-point `color`
