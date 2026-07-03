@@ -58,9 +58,22 @@ CREATE TABLE IF NOT EXISTS scan_results (
     stop_triggered       BOOLEAN,
     volume               BIGINT,
     avg_volume           BIGINT,
+    slope_pct_day        DOUBLE PRECISION,
+    trend_r2             DOUBLE PRECISION,
+    up_day_ratio         DOUBLE PRECISION,
+    vol_expansion        DOUBLE PRECISION,
+    breakout_age         INTEGER,
+    breakout_score       DOUBLE PRECISION,
     PRIMARY KEY (run_id, preset, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_results_preset_run ON scan_results (preset, run_id DESC);
+-- Idempotent upgrades for databases created before the breakout columns.
+ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS slope_pct_day  DOUBLE PRECISION;
+ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS trend_r2       DOUBLE PRECISION;
+ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS up_day_ratio   DOUBLE PRECISION;
+ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS vol_expansion  DOUBLE PRECISION;
+ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS breakout_age   INTEGER;
+ALTER TABLE scan_results ADD COLUMN IF NOT EXISTS breakout_score DOUBLE PRECISION;
 
 -- Tiny key/value store for the self-resuming backfill cursor & phase.
 CREATE TABLE IF NOT EXISTS job_state (

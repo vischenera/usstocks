@@ -15,7 +15,7 @@ import traceback
 import config
 import db
 from datasource import RateLimited, get_source
-from metrics import calculate_metrics
+from metrics import breakout_metrics, calculate_metrics
 from universe import get_all_us_tickers
 
 PHASE_KEY = "phase"
@@ -118,11 +118,12 @@ def incremental_step(conn, src, symbols):
     return rate_limited, processed, errors
 
 
-def evaluate_symbol(cfg, symbol, name, sector, mcap, bars):
+def evaluate_symbol(cfg, symbol, name, sector, mcap, bars, bm=None):
     """Apply one preset's filters + metrics to a symbol's bars.
 
     Pure function (no DB) — mirrors the original apply_filters pipeline exactly,
     so it can be unit-tested in isolation. Returns a result row dict or None.
+    `bm` is the symbol's precomputed breakout_metrics dict (window-independent).
     """
     if not bars:
         return None
@@ -135,6 +136,19 @@ def evaluate_symbol(cfg, symbol, name, sector, mcap, bars):
         return None
     if mcap < cfg["min_mcap"] or mcap > cfg["max_mcap"]:
         return None
+    bm = bm if bm is not None else breakout_metrics(bars)
+    # Breakout-style gates, only enforced by presets that define them.
+    if "min_slope_pct_day" in cfg:
+        if bm["slope_pct_day"] < cfg["min_slope_pct_day"]:
+            return None
+        if bm["trend_r2"] < cfg["min_trend_r2"]:
+            return None
+        if bm["up_day_ratio"] < cfg["min_up_day_ratio"]:
+            return None
+        if bm["vol_expansion"] < cfg["min_vol_expansion"]:
+            return None
+        if bm["breakout_age"] is None or bm["breakout_age"] > cfg["max_breakout_age"]:
+            return None
     m = calculate_metrics(bars, cfg["period_days"], cfg["stop_percentage"],
                           cfg["period_days"] == 1)
     if m is None:
@@ -144,7 +158,7 @@ def evaluate_symbol(cfg, symbol, name, sector, mcap, bars):
     if cfg.get("max_volatility", 999) < 999 and m["volatility"] > cfg["max_volatility"]:
         return None
     return {"symbol": symbol, "company_name": name, "sector": sector,
-            "market_cap": mcap, **m}
+            "market_cap": mcap, **m, **bm}
 
 
 def compute_results(conn, run_id, symbols):
@@ -160,11 +174,16 @@ def compute_results(conn, run_id, symbols):
     # Bulk-load all OHLCV in a single query (far fewer round-trips than per-symbol).
     all_bars = db.load_all_ohlcv(conn)
 
+    # Breakout metrics are window-independent — compute once per symbol,
+    # not once per (preset, symbol).
+    bm_by_symbol = {s: breakout_metrics(all_bars.get(s) or []) for s in symbols}
+
     for preset_key, cfg in config.PRESETS.items():
         rows = []
         for symbol in symbols:
             name, sector, mcap = meta.get(symbol, (symbol, "N/A", 0))
-            row = evaluate_symbol(cfg, symbol, name, sector, mcap, all_bars.get(symbol))
+            row = evaluate_symbol(cfg, symbol, name, sector, mcap,
+                                  all_bars.get(symbol), bm_by_symbol.get(symbol))
             if row is not None:
                 rows.append(row)
         db.insert_results(conn, run_id, preset_key, rows)

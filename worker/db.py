@@ -193,6 +193,8 @@ def insert_results(conn, run_id, preset, results):
         "current_price", "period_gain_pct", "momentum_score", "volatility",
         "highest_high", "trailing_stop_level", "distance_to_stop_pct",
         "stop_triggered", "volume", "avg_volume",
+        "slope_pct_day", "trend_r2", "up_day_ratio", "vol_expansion",
+        "breakout_age", "breakout_score",
     ]
     with conn.cursor() as cur:
         psycopg2.extras.execute_values(
@@ -202,7 +204,9 @@ def insert_results(conn, run_id, preset, results):
                 run_id, preset, symbol, company_name, sector, market_cap,
                 current_price, period_gain_pct, momentum_score, volatility,
                 highest_high, trailing_stop_level, distance_to_stop_pct,
-                stop_triggered, volume, avg_volume
+                stop_triggered, volume, avg_volume,
+                slope_pct_day, trend_r2, up_day_ratio, vol_expansion,
+                breakout_age, breakout_score
             ) VALUES %s
             ON CONFLICT (run_id, preset, symbol) DO NOTHING
             """,

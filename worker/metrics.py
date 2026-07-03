@@ -84,3 +84,80 @@ def calculate_metrics(bars, period_days, stop_percentage, is_intraday=False):
         }
     except (KeyError, TypeError, ZeroDivisionError):
         return None
+
+
+# ---- Breakout detection ------------------------------------------------
+# Quantifies the "steep, straight, volume-backed fresh breakout" setup:
+#   slope_pct_day  linear-regression slope of the last SLOPE_WINDOW closes,
+#                  as % of the window's mean close per day (steepness)
+#   trend_r2       R^2 of that regression (straightness — kills choppy spikes)
+#   up_day_ratio   fraction of up-days in the window (persistence)
+#   vol_expansion  avg volume of the window vs the prior VOL_BASELINE days
+#   breakout_age   sessions since close last crossed above the max high of
+#                  the preceding BREAKOUT_LOOKBACK days (None = no cross
+#                  within BREAKOUT_RECENT sessions)
+#   breakout_score slope * r2 — ranking key: steepest CLEAN trend first
+# Mirrored in web/lib/metrics.ts — keep both in sync.
+
+SLOPE_WINDOW = 10
+VOL_BASELINE = 30
+BREAKOUT_LOOKBACK = 20
+BREAKOUT_RECENT = 5
+
+
+def breakout_metrics(bars):
+    out = {
+        "slope_pct_day": 0.0, "trend_r2": 0.0, "up_day_ratio": 0.0,
+        "vol_expansion": 0.0, "breakout_age": None, "breakout_score": 0.0,
+    }
+    if not bars or len(bars) < SLOPE_WINDOW + 2:
+        return out
+    closes = [b["close"] for b in bars]
+    highs = [b["high"] for b in bars]
+    volumes = [b["volume"] for b in bars]
+    if any(c is None or c <= 0 for c in closes[-SLOPE_WINDOW:]):
+        return out
+
+    # Regression on the last SLOPE_WINDOW closes.
+    ys = closes[-SLOPE_WINDOW:]
+    n = len(ys)
+    xs = list(range(n))
+    mean_x = sum(xs) / n
+    mean_y = sum(ys) / n
+    sxx = sum((x - mean_x) ** 2 for x in xs)
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, ys))
+    if sxx > 0 and mean_y > 0:
+        slope = sxy / sxx
+        out["slope_pct_day"] = (slope / mean_y) * 100
+        ss_tot = sum((y - mean_y) ** 2 for y in ys)
+        if ss_tot > 0:
+            ss_res = sum((y - (mean_y + slope * (x - mean_x))) ** 2 for x, y in zip(xs, ys))
+            out["trend_r2"] = max(0.0, 1 - ss_res / ss_tot)
+
+    ups = sum(1 for i in range(len(closes) - SLOPE_WINDOW, len(closes))
+              if closes[i] is not None and closes[i - 1] and closes[i] > closes[i - 1])
+    out["up_day_ratio"] = ups / SLOPE_WINDOW
+
+    recent_vol = volumes[-SLOPE_WINDOW:]
+    prior_vol = volumes[-(SLOPE_WINDOW + VOL_BASELINE):-SLOPE_WINDOW]
+    recent_avg = sum(v or 0 for v in recent_vol) / len(recent_vol)
+    if prior_vol:
+        prior_avg = sum(v or 0 for v in prior_vol) / len(prior_vol)
+        if prior_avg > 0:
+            out["vol_expansion"] = recent_avg / prior_avg
+
+    # Most recent session (within BREAKOUT_RECENT) whose close cleared the
+    # max high of the preceding BREAKOUT_LOOKBACK sessions.
+    last = len(bars) - 1
+    for age in range(BREAKOUT_RECENT):
+        idx = last - age
+        if idx - BREAKOUT_LOOKBACK < 0:
+            break
+        prior_high = max((h for h in highs[idx - BREAKOUT_LOOKBACK:idx] if h is not None), default=None)
+        c = closes[idx]
+        if prior_high is not None and c is not None and c > prior_high:
+            out["breakout_age"] = age
+            break
+
+    out["breakout_score"] = max(0.0, out["slope_pct_day"]) * max(0.0, out["trend_r2"])
+    return out

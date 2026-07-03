@@ -87,4 +87,16 @@ PRESETS = {
         "min_mcap": 0, "max_mcap": float("inf"),
         "min_momentum": 0, "max_volatility": 999,
     },
+    # Fresh, steep, CLEAN climbs out of a base with volume behind them —
+    # thresholds calibrated on the ODD / RGNX June-2026 style setups.
+    "breakout": {
+        "name": "Breakout (fresh momentum)",
+        "period_days": 10, "stop_percentage": 10,
+        "min_price": 5.0, "max_price": 100_000, "min_volume": 100_000,
+        "min_mcap": 0, "max_mcap": float("inf"),
+        "min_momentum": 0, "max_volatility": 999,
+        "min_slope_pct_day": 0.8, "min_trend_r2": 0.7,
+        "min_up_day_ratio": 0.6, "min_vol_expansion": 1.5,
+        "max_breakout_age": 5,
+    },
 }

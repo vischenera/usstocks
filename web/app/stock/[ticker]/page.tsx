@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CandleChart from "@/components/CandleChart";
-import { Bar } from "@/lib/trail";
+import { autoFlippingTrail, Bar } from "@/lib/trail";
 
 export default function StockPage({ params }: { params: { ticker: string } }) {
   const symbol = params.ticker.toUpperCase();
@@ -47,6 +47,17 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
       .finally(() => setLoading(false));
   }, [symbol]);
 
+  // Expected exit = the current trailing-stop level for the active direction.
+  const exit = useMemo(() => {
+    if (!bars.length) return null;
+    const { points, currentDirection } = autoFlippingTrail(bars, stopPct);
+    const trail = points[points.length - 1]?.trail;
+    const price = bars[bars.length - 1]?.close;
+    if (!trail || !price) return null;
+    const distPct = ((price - trail) / price) * 100;
+    return { trail, price, distPct, direction: currentDirection };
+  }, [bars, stopPct]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -63,6 +74,17 @@ export default function StockPage({ params }: { params: { ticker: string } }) {
             </a>
           </div>
           {meta && <p className="text-slate-400">{meta.company_name} · {meta.sector}</p>}
+          {exit && (
+            <p className="mt-1 text-sm">
+              <span className="text-slate-400">Expected exit ({exit.direction}): </span>
+              <span className={exit.direction === "LONG" ? "text-emerald-400" : "text-orange-400"}>
+                ${exit.trail.toFixed(2)}
+              </span>
+              <span className="ml-1 text-slate-500">
+                ({exit.distPct >= 0 ? "−" : "+"}{Math.abs(exit.distPct).toFixed(1)}% {exit.direction === "LONG" ? "below" : "above"} price)
+              </span>
+            </p>
+          )}
         </div>
         <label className="text-sm">
           <span className="mb-1 block text-slate-400">Trailing stop %</span>
