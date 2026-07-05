@@ -114,9 +114,10 @@ export default function BotPage() {
     try {
       const res = await fetch("/api/bot/run", { method: "POST" });
       const d = await res.json();
-      setNote(res.ok ? d.note : d.error ?? "Trigger failed");
+      setNote(res.ok ? d.note : d.error ?? "Run failed");
+      if (res.ok) await load();
     } catch {
-      setNote("Trigger failed");
+      setNote("Run failed");
     } finally {
       setRunning(false);
     }
@@ -132,7 +133,7 @@ export default function BotPage() {
           <h1 className="text-2xl font-semibold">Paper Bot</h1>
           <p className="text-sm text-slate-400">
             Trades the Breakout signals with virtual money — EOD signals, next-day fills,
-            10% trail + fading step-out. Replays on every scan run.
+            10% trail + fading step-out. Save config, then Run to replay on demand.
           </p>
         </div>
       </div>
@@ -164,8 +165,7 @@ export default function BotPage() {
 
       {!data || !data.equity.length ? (
         <div className="rounded-lg border border-slate-800 p-8 text-center text-slate-400">
-          No simulation results yet — the bot runs as part of the worker scan.
-          Trigger <span className="text-slate-300">Actions → scan → Run workflow</span> (or wait for the next scheduled run).
+          No simulation results yet — hit <span className="text-slate-300">Run now</span> above.
         </div>
       ) : (
         <>
