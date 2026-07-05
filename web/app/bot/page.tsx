@@ -63,6 +63,7 @@ export default function BotPage() {
   const [data, setData] = useState<BotData | null>(null);
   const [form, setForm] = useState({ capital: "1000", slots: "5", start_days: "90", slippage_pct: "0.25" });
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const load = () =>
@@ -107,6 +108,20 @@ export default function BotPage() {
     }
   };
 
+  const runNow = async () => {
+    setRunning(true);
+    setNote(null);
+    try {
+      const res = await fetch("/api/bot/run", { method: "POST" });
+      const d = await res.json();
+      setNote(res.ok ? d.note : d.error ?? "Trigger failed");
+    } catch {
+      setNote("Trigger failed");
+    } finally {
+      setRunning(false);
+    }
+  };
+
   const s = data?.summary;
 
   return (
@@ -139,6 +154,10 @@ export default function BotPage() {
         <button onClick={save} disabled={saving}
           className="rounded bg-sky-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:bg-slate-800 disabled:text-slate-500">
           {saving ? "Saving…" : "Save config"}
+        </button>
+        <button onClick={runNow} disabled={running}
+          className="rounded bg-emerald-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500">
+          {running ? "Starting…" : "Run now"}
         </button>
         {note && <span className="pb-2 text-sm text-slate-400">{note}</span>}
       </div>
