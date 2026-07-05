@@ -110,12 +110,14 @@ async function computeLive(sql: ReturnType<typeof getSql>, preset: string, days:
   return rows;
 }
 
-// Attach a per-row `spark` array (ascending closes over the requested window)
-// to the FINAL, already-limited row set — one windowed query for <= `limit`
-// symbols, shared by all three result paths.
+// Attach per-row sparkline arrays to the FINAL, already-limited row set:
+// `spark90` is the full stored window (fixed scale — comparable across rows
+// regardless of the selected period) and `spark` is the selected-period tail
+// sliced from the same series. One query for <= `limit` symbols, shared by
+// all three result paths.
 async function attachSparks(sql: ReturnType<typeof getSql>, rows: any[], days: number) {
   if (!rows.length) return rows;
-  const window = Math.min(90, Math.max(5, days));
+  const window = Math.min(STORED_WINDOW_DAYS, Math.max(5, days));
   const symbols = rows.map((r) => r.symbol);
   const sparkRows = await sql`
     SELECT symbol, close FROM (
@@ -124,7 +126,7 @@ async function attachSparks(sql: ReturnType<typeof getSql>, rows: any[], days: n
       FROM daily_ohlcv
       WHERE symbol = ANY(${symbols}) AND close IS NOT NULL
     ) t
-    WHERE rn <= ${window}
+    WHERE rn <= ${STORED_WINDOW_DAYS}
     ORDER BY symbol, date ASC
   `;
   const bySymbol = new Map<string, number[]>();
@@ -133,7 +135,11 @@ async function attachSparks(sql: ReturnType<typeof getSql>, rows: any[], days: n
     arr.push(Number(r.close));
     bySymbol.set(r.symbol, arr);
   }
-  for (const r of rows) r.spark = bySymbol.get(r.symbol) ?? [];
+  for (const r of rows) {
+    const full = bySymbol.get(r.symbol) ?? [];
+    r.spark90 = full;
+    r.spark = full.slice(-window);
+  }
   return rows;
 }
 

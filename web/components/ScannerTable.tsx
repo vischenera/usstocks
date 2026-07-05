@@ -21,6 +21,7 @@ export type Row = {
   breakout_score?: number;
   slope3_pct_day?: number;
   spark?: number[];
+  spark90?: number[];
 };
 
 // Inline price sparkline: closes over the selected period, colored by the
@@ -114,9 +115,12 @@ export default function ScannerTable({
                   {c.label}{sortKey === c.key ? (sortDir === "asc" ? " ▲" : " ▼") : ""}
                 </th>
               );
-              // Non-sortable sparkline column, pinned right after Ticker.
+              // Non-sortable sparkline columns, pinned right after Ticker:
+              // selected-period trend, then the fixed 90d pattern view.
               return c.key === "symbol"
-                ? [th, <th key="trend" className="px-3 py-2">Trend</th>]
+                ? [th,
+                   <th key="trend" className="px-3 py-2">Trend</th>,
+                   <th key="trend90" className="px-3 py-2">90d</th>]
                 : [th];
             })}
             <th className="px-3 py-2 text-center">Status</th>
@@ -132,6 +136,11 @@ export default function ScannerTable({
               <td className="px-3 py-2">
                 <a href={`/stock/${r.symbol}`} aria-label={`${r.symbol} chart`}>
                   <Spark data={r.spark} />
+                </a>
+              </td>
+              <td className="px-3 py-2">
+                <a href={`/stock/${r.symbol}`} aria-label={`${r.symbol} 90-day chart`}>
+                  <Spark data={r.spark90} />
                 </a>
               </td>
               <td className="px-3 py-2 text-slate-300">
