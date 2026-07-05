@@ -12,6 +12,7 @@ writes a fresh scan_results set plus a scan_runs status row.
 import time
 import traceback
 
+import bot
 import config
 import db
 from datasource import RateLimited, get_source
@@ -189,6 +190,10 @@ def compute_results(conn, run_id, symbols):
         db.insert_results(conn, run_id, preset_key, rows)
         total_valid += len(rows)
         print(f"  preset {preset_key}: {len(rows)} matches")
+
+    # Paper-trading bot: full deterministic replay over the same in-memory
+    # data. Guarded internally — a bot failure never fails the scan.
+    bot.run(conn, all_bars, meta)
     return total_valid
 
 

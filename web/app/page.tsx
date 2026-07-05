@@ -118,6 +118,9 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <a href="/bot" className="text-sm text-sky-400 hover:underline">Paper Bot →</a>
+      </div>
       <StatusPanel status={status} />
 
       <div className="flex flex-wrap items-end gap-4">
