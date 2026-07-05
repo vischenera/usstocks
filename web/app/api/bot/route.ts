@@ -108,7 +108,7 @@ export async function GET() {
   }
 }
 
-// Update config. The worker picks it up and replays on its next scan run.
+// Update config. Takes effect on the next "Run now" replay.
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
         start_days = EXCLUDED.start_days, slippage_pct = EXCLUDED.slippage_pct,
         updated_at = now()
     `;
-    return NextResponse.json({ ok: true, note: "Config saved — the bot replays on the next scan run." }, NO_STORE);
+    return NextResponse.json({ ok: true, note: "Config saved — hit Run now to replay." }, NO_STORE);
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
