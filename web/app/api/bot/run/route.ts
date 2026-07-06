@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
-import { ensureBotTables } from "@/lib/botSchema";
+import { ensureBotTables, CONFIG_FIELDS } from "@/lib/botSchema";
 import { runBotSim, BotConfig } from "@/lib/botSim";
 import { Bar } from "@/lib/metrics";
 
@@ -21,7 +21,7 @@ export async function POST() {
       sql`
         INSERT INTO bot_config (id) VALUES (1)
         ON CONFLICT (id) DO UPDATE SET id = 1
-        RETURNING capital, slots, start_days, slippage_pct
+        RETURNING *
       `,
       sql`
         SELECT symbol, to_char(date, 'YYYY-MM-DD') AS date, open, high, low, close, volume
@@ -32,12 +32,12 @@ export async function POST() {
       sql`SELECT symbol, market_cap FROM tickers`,
     ]);
 
-    const cfg: BotConfig = {
-      capital: Number(cfgRows[0].capital),
-      slots: Number(cfgRows[0].slots),
-      start_days: Number(cfgRows[0].start_days),
-      slippage_pct: Number(cfgRows[0].slippage_pct),
-    };
+    const cfg = Object.fromEntries(
+      CONFIG_FIELDS.map((f) => {
+        const v = Number(cfgRows[0][f.key]);
+        return [f.key, Number.isFinite(v) ? v : f.def];
+      }),
+    ) as unknown as BotConfig;
 
     const allBars = new Map<string, Bar[]>();
     for (const r of barRows as any[]) {

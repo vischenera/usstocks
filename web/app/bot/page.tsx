@@ -13,7 +13,7 @@ type ClosedTrade = {
   exit_reason: string; pnl: number; pnl_pct: number;
 };
 type BotData = {
-  config: { capital: number; slots: number; start_days: number; slippage_pct: number } | null;
+  config: Record<string, number> | null;
   equity: { date: string; equity: number; cash: number }[];
   open: OpenPos[];
   closed: ClosedTrade[];
@@ -61,7 +61,12 @@ function Tile({ label, value, cls }: { label: string; value: string; cls?: strin
 
 export default function BotPage() {
   const [data, setData] = useState<BotData | null>(null);
-  const [form, setForm] = useState({ capital: "1000", slots: "5", start_days: "90", slippage_pct: "0.25" });
+  const [form, setForm] = useState<Record<string, string>>({
+    capital: "1000", slots: "5", start_days: "90", slippage_pct: "0.25",
+    stop_pct: "10", mcap_min_b: "", mcap_max_b: "", min_price: "5",
+    min_slope: "0.8", min_r2: "0.7", min_up_pct: "60", min_vol_x: "1.5",
+    max_entry_age: "5", fade_age: "5",
+  });
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -73,11 +78,17 @@ export default function BotPage() {
         if (!d) return;
         setData(d);
         if (d.config) {
+          const c = d.config;
           setForm({
-            capital: String(d.config.capital),
-            slots: String(d.config.slots),
-            start_days: String(d.config.start_days),
-            slippage_pct: String(d.config.slippage_pct),
+            capital: String(c.capital), slots: String(c.slots),
+            start_days: String(c.start_days), slippage_pct: String(c.slippage_pct),
+            stop_pct: String(c.stop_pct),
+            mcap_min_b: c.mcap_min > 0 ? String(c.mcap_min / 1e9) : "",
+            mcap_max_b: c.mcap_max > 0 ? String(c.mcap_max / 1e9) : "",
+            min_price: String(c.min_price), min_slope: String(c.min_slope),
+            min_r2: String(c.min_r2), min_up_pct: String(Math.round(c.min_up_ratio * 100)),
+            min_vol_x: String(c.min_vol_x), max_entry_age: String(c.max_entry_age),
+            fade_age: String(c.fade_age),
           });
         }
       })
@@ -97,6 +108,16 @@ export default function BotPage() {
           slots: Number(form.slots),
           start_days: Number(form.start_days),
           slippage_pct: Number(form.slippage_pct),
+          stop_pct: Number(form.stop_pct),
+          mcap_min: form.mcap_min_b === "" ? 0 : Number(form.mcap_min_b) * 1e9,
+          mcap_max: form.mcap_max_b === "" ? 0 : Number(form.mcap_max_b) * 1e9,
+          min_price: Number(form.min_price),
+          min_slope: Number(form.min_slope),
+          min_r2: Number(form.min_r2),
+          min_up_ratio: Number(form.min_up_pct) / 100,
+          min_vol_x: Number(form.min_vol_x),
+          max_entry_age: Number(form.max_entry_age),
+          fade_age: Number(form.fade_age),
         }),
       });
       const d = await res.json();
@@ -133,25 +154,51 @@ export default function BotPage() {
           <h1 className="text-2xl font-semibold">Paper Bot</h1>
           <p className="text-sm text-slate-400">
             Trades the Breakout signals with virtual money — EOD signals, next-day fills,
-            10% trail + fading step-out. Save config, then Run to replay on demand.
+            trailing stop + fading step-out. Tune, Save, then Run to compare results.
           </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4 rounded-lg border border-slate-800 p-4">
-        {([
-          ["Capital ($)", "capital"],
-          ["Slots", "slots"],
-          ["Start (days)", "start_days"],
-          ["Slippage (%)", "slippage_pct"],
-        ] as const).map(([label, key]) => (
-          <label key={key} className="text-sm">
-            <span className="mb-1 block text-slate-400">{label}</span>
-            <input type="number" value={form[key]}
-              onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
-              className="w-28 rounded border border-slate-700 bg-slate-900 px-3 py-1.5" />
-          </label>
-        ))}
+      <div className="space-y-3 rounded-lg border border-slate-800 p-4">
+        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Money</div>
+        <div className="flex flex-wrap items-end gap-4">
+          {([
+            ["Capital ($)", "capital"],
+            ["Slots", "slots"],
+            ["Start (days)", "start_days"],
+            ["Slippage (%)", "slippage_pct"],
+            ["Trail stop (%)", "stop_pct"],
+          ] as const).map(([label, key]) => (
+            <label key={key} className="text-sm">
+              <span className="mb-1 block text-slate-400">{label}</span>
+              <input type="number" value={form[key]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-1.5" />
+            </label>
+          ))}
+        </div>
+        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Entry gates</div>
+        <div className="flex flex-wrap items-end gap-4">
+          {([
+            ["MCap min ($B)", "mcap_min_b"],
+            ["MCap max ($B)", "mcap_max_b"],
+            ["Min price ($)", "min_price"],
+            ["Min slope (%/d)", "min_slope"],
+            ["Min R²", "min_r2"],
+            ["Min up-days (%)", "min_up_pct"],
+            ["Min vol (×)", "min_vol_x"],
+            ["Max entry age (d)", "max_entry_age"],
+            ["Fade age (d)", "fade_age"],
+          ] as const).map(([label, key]) => (
+            <label key={key} className="text-sm">
+              <span className="mb-1 block text-slate-400">{label}</span>
+              <input type="number" step="any" placeholder={key.startsWith("mcap") ? "any" : undefined}
+                value={form[key]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                className="w-24 rounded border border-slate-700 bg-slate-900 px-3 py-1.5" />
+            </label>
+          ))}
+        </div>
         <button onClick={save} disabled={saving}
           className="rounded bg-sky-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-sky-500 disabled:bg-slate-800 disabled:text-slate-500">
           {saving ? "Saving…" : "Save config"}
