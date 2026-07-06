@@ -17,7 +17,13 @@
 import { breakoutMetrics, Bar } from "./metrics";
 import { PRESET_DEFS } from "./presets";
 
-export type BotConfig = { capital: number; slots: number; start_days: number; slippage_pct: number };
+export type BotConfig = {
+  capital: number; slots: number; start_days: number; slippage_pct: number;
+  // Strategy knobs — default to the breakout preset's values when omitted.
+  stop_pct?: number; mcap_min?: number; mcap_max?: number; min_price?: number;
+  min_slope?: number; min_r2?: number; min_up_ratio?: number; min_vol_x?: number;
+  max_entry_age?: number; fade_age?: number;
+};
 
 export type SimTrade = {
   symbol: string;
@@ -64,9 +70,18 @@ export function runBotSim(
   cfg: BotConfig,
 ): SimResult {
   const gates = PRESET_DEFS["breakout"];
-  const stopPct = gates.stopPercentage / 100;
+  const stopPct = (cfg.stop_pct ?? gates.stopPercentage) / 100;
   const slip = cfg.slippage_pct / 100;
   const slots = Math.max(1, cfg.slots);
+  const fadeAge = cfg.fade_age ?? FADE_MIN_AGE;
+  const mcapMin = cfg.mcap_min ?? 0;
+  const mcapMax = cfg.mcap_max && cfg.mcap_max > 0 ? cfg.mcap_max : Infinity;
+  const minPrice = cfg.min_price ?? gates.minPrice;
+  const minSlope = cfg.min_slope ?? gates.minSlopePctDay!;
+  const minR2 = cfg.min_r2 ?? gates.minTrendR2!;
+  const minUpRatio = cfg.min_up_ratio ?? gates.minUpDayRatio!;
+  const minVolX = cfg.min_vol_x ?? gates.minVolExpansion!;
+  const maxEntryAge = cfg.max_entry_age ?? gates.maxBreakoutAge!;
 
   const symBars = new Map([...allBars].filter(([, b]) => b.length >= 5));
   const calSet = new Set<string>();
@@ -184,7 +199,7 @@ export function runBotSim(
 
     for (const [symbol, pos] of positions) {
       const idx = symIdx.get(symbol)?.get(day);
-      if (idx === undefined || pos.age < FADE_MIN_AGE) continue;
+      if (idx === undefined || pos.age < fadeAge) continue;
       const bars = symBars.get(symbol)!;
       if (slope3(bars.slice(Math.max(0, idx - 3), idx + 1)) <= 0) {
         pendingExits.push({ symbol, reason: "fading" });
@@ -201,17 +216,17 @@ export function runBotSim(
         if (!freshOk.get(symbol)![idx]) continue;
         const window = bars.slice(Math.max(0, idx + 1 - 90), idx + 1);
         const lastClose = window[window.length - 1].close;
-        if (!lastClose || lastClose < gates.minPrice || lastClose > gates.maxPrice) continue;
+        if (!lastClose || lastClose < minPrice || lastClose > gates.maxPrice) continue;
         const avgVol = window.reduce((a, b) => a + (b.volume || 0), 0) / window.length;
         if (avgVol < gates.minVolume) continue;
         const mcap = mcaps.get(symbol) ?? 0;
-        if (mcap < gates.minMcap || mcap > gates.maxMcap) continue;
+        if (mcap < mcapMin || mcap > mcapMax) continue;
         const bm = breakoutMetrics(window);
-        if (bm.slope_pct_day < gates.minSlopePctDay!) continue;
-        if (bm.trend_r2 < gates.minTrendR2!) continue;
-        if (bm.up_day_ratio < gates.minUpDayRatio!) continue;
-        if (bm.vol_expansion < gates.minVolExpansion!) continue;
-        if (bm.breakout_age === null || bm.breakout_age > gates.maxBreakoutAge!) continue;
+        if (bm.slope_pct_day < minSlope) continue;
+        if (bm.trend_r2 < minR2) continue;
+        if (bm.up_day_ratio < minUpRatio) continue;
+        if (bm.vol_expansion < minVolX) continue;
+        if (bm.breakout_age === null || bm.breakout_age > maxEntryAge) continue;
         candidates.push([bm.breakout_score, symbol]);
       }
       candidates.sort((a, b) => b[0] - a[0]);
