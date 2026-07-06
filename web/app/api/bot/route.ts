@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { ensureBotTables } from "@/lib/botSchema";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -16,6 +17,7 @@ const num = (v: any) => {
 export async function GET() {
   try {
     const sql = getSql();
+    await ensureBotTables(sql);
     const [cfgRows, equityRows, tradeRows] = await Promise.all([
       sql`SELECT capital, slots, start_days, slippage_pct, updated_at FROM bot_config WHERE id = 1`,
       sql`SELECT to_char(date, 'YYYY-MM-DD') AS date, equity, cash FROM bot_equity ORDER BY date ASC`,
@@ -129,6 +131,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "slippage_pct must be 0-5" }, { status: 400 });
     }
     const sql = getSql();
+    await ensureBotTables(sql);
     await sql`
       INSERT INTO bot_config (id, capital, slots, start_days, slippage_pct, updated_at)
       VALUES (1, ${capital}, ${slots}, ${startDays}, ${slippage}, now())

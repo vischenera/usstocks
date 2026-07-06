@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSql } from "@/lib/db";
+import { ensureBotTables } from "@/lib/botSchema";
 import { runBotSim, BotConfig } from "@/lib/botSim";
 import { Bar } from "@/lib/metrics";
 
@@ -14,6 +15,7 @@ export const maxDuration = 60;
 export async function POST() {
   try {
     const sql = getSql();
+    await ensureBotTables(sql);
 
     const [cfgRows, barRows, metaRows] = await Promise.all([
       sql`
