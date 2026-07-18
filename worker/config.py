@@ -7,6 +7,10 @@ All windows are in *trading days*. The rolling history window is 90 days
 # Rolling history window kept per symbol (trading days)
 WINDOW_DAYS = 90
 
+# How often the OHLCV cache (worker/cache.py) is force-rebuilt from Postgres,
+# to bound drift and self-heal anything the CI cache got evicted.
+FULL_RELOAD_INTERVAL_DAYS = 7
+
 # How many calendar days the daily incremental fetch should look back.
 # A small buffer covers weekends/holidays; duplicates are de-duped on upsert.
 INCREMENTAL_LOOKBACK_DAYS = 7

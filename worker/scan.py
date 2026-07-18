@@ -12,6 +12,7 @@ writes a fresh scan_results set plus a scan_runs status row.
 import time
 import traceback
 
+import cache
 import config
 import db
 from datasource import RateLimited, get_source
@@ -35,19 +36,34 @@ def ensure_universe(conn):
     return db.all_symbols(conn)
 
 
-def _store_symbol(conn, symbol, bars, info=None):
-    """Upsert OHLCV (and optional ticker meta), then trim to the window."""
+def _merge_bars(existing, new_tuples, keep_days):
+    """Fold freshly-fetched (date, o, h, l, c, v) tuples into the cached
+    ascending dict list for a symbol, mirroring upsert + trim in Postgres."""
+    by_date = {b["date"]: b for b in (existing or [])}
+    for d, o, h, l, c, v in new_tuples:
+        by_date[d] = {"date": d, "open": o, "high": h, "low": l, "close": c, "volume": v}
+    merged = sorted(by_date.values(), key=lambda b: b["date"])
+    return merged[-keep_days:] if len(merged) > keep_days else merged
+
+
+def _store_symbol(conn, symbol, bars, all_bars, info=None):
+    """Upsert OHLCV (and optional ticker meta), then trim to the window.
+
+    Also updates `all_bars` in place so callers don't need to re-read the
+    table back from Postgres to see what was just written.
+    """
     if not bars:
         return False
     db.upsert_ohlcv(conn, symbol, bars)
     db.trim_ohlcv(conn, symbol, config.WINDOW_DAYS)
+    all_bars[symbol] = _merge_bars(all_bars.get(symbol), bars, config.WINDOW_DAYS)
     if info is not None:
         name, sector, mcap = info
         db.upsert_tickers(conn, [(symbol, name, sector, None, mcap)])
     return True
 
 
-def backfill_step(conn, src, symbols):
+def backfill_step(conn, src, symbols, all_bars):
     """Process the next chunk. Returns (rate_limited, processed, errors, done)."""
     cursor = int(db.get_state(conn, CURSOR_KEY, 0))
     chunk = symbols[cursor:cursor + config.BACKFILL_CHUNK]
@@ -60,7 +76,7 @@ def backfill_step(conn, src, symbols):
         try:
             bars = src.fetch_history(symbol, config.WINDOW_DAYS)
             info = src.fetch_info(symbol) if bars else None
-            if _store_symbol(conn, symbol, bars, info):
+            if _store_symbol(conn, symbol, bars, all_bars, info):
                 valid += 1
             processed += 1
         except RateLimited as exc:
@@ -98,7 +114,7 @@ def backfill_step(conn, src, symbols):
     return rate_limited, processed, errors, reached_end
 
 
-def incremental_step(conn, src, symbols):
+def incremental_step(conn, src, symbols, all_bars):
     """Fetch the last few days for every symbol. Returns (rate_limited, processed, errors)."""
     print(f"Incremental update for {len(symbols)} symbols")
     processed = errors = 0
@@ -106,7 +122,7 @@ def incremental_step(conn, src, symbols):
     for symbol in symbols:
         try:
             bars = src.fetch_history(symbol, config.INCREMENTAL_LOOKBACK_DAYS)
-            _store_symbol(conn, symbol, bars)
+            _store_symbol(conn, symbol, bars, all_bars)
             processed += 1
         except RateLimited as exc:
             print(f"Rate limited at {symbol}: {exc}. Stopping; will resume.")
@@ -161,8 +177,8 @@ def evaluate_symbol(cfg, symbol, name, sector, mcap, bars, bm=None):
             "market_cap": mcap, **m, **bm}
 
 
-def compute_results(conn, run_id, symbols):
-    """Recompute metrics for every preset from DB data; store scan_results."""
+def compute_results(conn, run_id, symbols, all_bars):
+    """Recompute metrics for every preset from `all_bars`; store scan_results."""
     total_valid = 0
     # Pre-load ticker meta once.
     meta = {}
@@ -170,9 +186,6 @@ def compute_results(conn, run_id, symbols):
         cur.execute("SELECT symbol, company_name, sector, market_cap FROM tickers")
         for sym, name, sector, mcap in cur.fetchall():
             meta[sym] = (name, sector, mcap or 0)
-
-    # Bulk-load all OHLCV in a single query (far fewer round-trips than per-symbol).
-    all_bars = db.load_all_ohlcv(conn)
 
     # Breakout metrics are window-independent — compute once per symbol,
     # not once per (preset, symbol).
@@ -206,13 +219,16 @@ def run_once():
         rate_limited = errors = processed = 0
         done = False
 
-        if phase == "backfill":
-            rate_limited, processed, errors, done = backfill_step(conn, src, symbols)
-        else:
-            rate_limited, processed, errors = incremental_step(conn, src, symbols)
+        all_bars = cache.load_or_reload(conn)
 
-        valid = compute_results(conn, run_id, symbols)
+        if phase == "backfill":
+            rate_limited, processed, errors, done = backfill_step(conn, src, symbols, all_bars)
+        else:
+            rate_limited, processed, errors = incremental_step(conn, src, symbols, all_bars)
+
+        valid = compute_results(conn, run_id, symbols, all_bars)
         db.prune_old_runs(conn)
+        cache.save(all_bars)
 
         if rate_limited:
             status = "rate_limited"
