@@ -31,6 +31,19 @@ jobs:
           cache: pip
           cache-dependency-path: worker/requirements.txt
 
+      # Carries worker/.cache (the OHLCV snapshot, see worker/cache.py) between
+      # runs so the scan doesn't need to re-pull the whole table from Postgres
+      # every day — that was blowing through Neon's free-tier transfer quota.
+      # restore-keys always picks up the most recent snapshot; the exact `key`
+      # (unique per run) makes actions/cache save a fresh one at the end.
+      - name: Restore OHLCV cache
+        uses: actions/cache@v4
+        with:
+          path: worker/.cache
+          key: ohlcv-cache-${{ github.run_id }}
+          restore-keys: |
+            ohlcv-cache-
+
       - name: Install dependencies
         run: pip install -r worker/requirements.txt
 
